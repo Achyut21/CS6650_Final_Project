@@ -6,7 +6,7 @@
 
 enum class OpType
 {
-    CREATE_TASk,
+    CREATE_TASK,
     UPDATE_TASK,
     MOVE_TASK,
     DELETE_TASK

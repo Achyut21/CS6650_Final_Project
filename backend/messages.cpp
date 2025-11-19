@@ -137,6 +137,8 @@ void Task::set_client_id(int id)
     this->client_id = id;
 }
 
+/* LogEntry Methods */
+
 LogEntry::LogEntry(int id, OperationType type, VectorClock vc, int tid, std::string desc, Column col, int cid); : entry_id(id), op_type(type), timestamp(vc), task_id(tid), description(desc), column(col), client_id(cid)
 {
 }
