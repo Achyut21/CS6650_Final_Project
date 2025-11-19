@@ -10,7 +10,7 @@ enum class OpType
     UPDATE_TASK,
     MOVE_TASK,
     DELETE_TASK
-}
+};
 
 enum class Column
 {
@@ -63,7 +63,7 @@ class LogEntry
 {
 private:
     int entry_id;
-    OperationType op_type;
+    OpType op_type;
     VectorClock timestamp;
 
     // Operation parameters
@@ -73,12 +73,12 @@ private:
     int client_id;           // For create
 
 public:
-    LogEntry(int id, OperationType type, VectorClock vc,
+    LogEntry(int id, OpType type, VectorClock vc,
              int tid, std::string desc, Column col, int cid);
 
     // Getters
     int get_entry_id() const;
-    OperationType get_op_type() const;
+    OpType get_op_type() const;
     const VectorClock &get_timestamp() const;
 
     int get_task_id() const;

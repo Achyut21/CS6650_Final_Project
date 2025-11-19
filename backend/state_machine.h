@@ -2,12 +2,14 @@
 #define __STATE_MACHINE_H__
 
 #include <vector>
+#include <mutex>
 #include "messages.h"
+#include "task_manager.h"
 class StateMachine
 {
 private:
     std::vector<LogEntry> smr_log;
-    std::mutex state_mutex;
+    mutable std::mutex state_mutex;
 
     int last_index;
     int committed_index;
@@ -16,6 +18,9 @@ private:
     int primary_id;
 
     TaskManager *task_manager;
+
+    // Private helper - no locking
+    void apply_entry_internal(int index);
 
 public:
     StateMachine(int id, TaskManager *tm);

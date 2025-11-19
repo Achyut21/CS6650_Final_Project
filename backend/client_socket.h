@@ -14,4 +14,4 @@ public:
     int Init(std::string ip, int port);
 };
 
-#endif // end of #ifndef __CLIENTSOCKET_H__
+#endif

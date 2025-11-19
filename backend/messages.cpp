@@ -139,16 +139,16 @@ void Task::set_client_id(int id)
 
 /* LogEntry Methods */
 
-LogEntry::LogEntry(int id, OperationType type, VectorClock vc, int tid, std::string desc, Column col, int cid); : entry_id(id), op_type(type), timestamp(vc), task_id(tid), description(desc), column(col), client_id(cid)
+LogEntry::LogEntry(int id, OpType type, VectorClock vc, int tid, std::string desc, Column col, int cid) : entry_id(id), op_type(type), timestamp(vc), task_id(tid), description(desc), column(col), client_id(cid)
 {
 }
 
-int LogEntry::get_entry_id()
+int LogEntry::get_entry_id() const
 {
     return entry_id;
 }
 
-OperationType LogEntry::get_op_type()
+OpType LogEntry::get_op_type() const
 {
     return op_type;
 }
@@ -158,22 +158,22 @@ const VectorClock &LogEntry::get_timestamp() const
     return timestamp;
 }
 
-int LogEntry::get_task_id()
+int LogEntry::get_task_id() const
 {
     return task_id;
 }
 
-std::string LogEntry::get_description()
+std::string LogEntry::get_description() const
 {
     return description;
 }
 
-Column LogEntry::get_column()
+Column LogEntry::get_column() const
 {
     return column;
 }
 
-LogEntry::get_client_id()
+int LogEntry::get_client_id() const
 {
     return client_id;
 }
