@@ -1,1 +1,29 @@
 @import "tailwindcss";
+
+@keyframes slide-in {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-update {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(0, 173, 181, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(0, 173, 181, 0.4);
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+.animate-pulse-update {
+  animation: pulse-update 0.6s ease-out;
+}

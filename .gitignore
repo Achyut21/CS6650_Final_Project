@@ -1,0 +1,174 @@
+# ============================================
+# Distributed Project Management Platform
+# Team 12 - CS6650 Final Project
+# ============================================
+
+# ============================================
+# C++ Build Artifacts (backend/)
+# ============================================
+
+# Compiled executables
+backend/master
+backend/backup
+backend/test_client
+backend/run_tests
+backend/run_sm_tests
+
+# Object files
+*.o
+
+# Debug symbols (macOS)
+*.dSYM/
+**/*.dSYM/
+
+# Logs
+*.log
+backend/*.log
+gateway/*.log
+
+# ============================================
+# Node.js (frontend/ and gateway/)
+# ============================================
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Lock files (optional - you can keep package-lock.json if you want)
+# package-lock.json
+
+# Build output
+dist/
+dist-ssr/
+build/
+*.local
+
+# Frontend dev server
+.vite/
+
+# Gateway public folder (regenerated from frontend build)
+gateway/public/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# ============================================
+# Editor & IDE Files
+# ============================================
+
+# VSCode
+.vscode/*
+!.vscode/extensions.json
+
+# JetBrains IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.*.sw?
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# Operating System Files
+# ============================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+.directory
+.Trash-*
+
+# ============================================
+# Temporary Files
+# ============================================
+
+*.tmp
+*.temp
+*.bak
+*.backup
+*.swp
+*.cache
+
+# ============================================
+# Project Archives & Submissions
+# ============================================
+
+# Zip files for submission
+*.zip
+
+# ============================================
+# Explicitly KEEP These Important Files
+# ============================================
+
+# Documentation (KEEP)
+!README.md
+!DEPLOYMENT.md
+!*/README.md
+
+# C++ Source Code (KEEP)
+!backend/*.cpp
+!backend/*.h
+!backend/Makefile
+!backend/*.sh
+
+# Node.js Configuration (KEEP)
+!gateway/*.js
+!gateway/package.json
+!frontend/package.json
+!frontend/vite.config.ts
+!frontend/tsconfig*.json
+
+# Frontend Source (KEEP)
+!frontend/src/**/*
+!frontend/public/**/*
+!frontend/index.html
+
+# Test Scripts (KEEP)
+!*.sh
+!tests/*.sh
+
+# ============================================
+# Notes
+# ============================================
+
+# To see what would be committed: git status
+# To force add ignored file: git add -f <file>
+# To check if file is ignored: git check-ignore -v <file>

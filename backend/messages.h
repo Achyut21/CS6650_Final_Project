@@ -47,16 +47,21 @@ public:
     Task();
     Task(int task_id, std::string description, Column column, int client_id);
 
-    int get_task_id();
-    std::string get_description();
-    Column get_column();
-    int get_client_id();
+    int get_task_id() const;
+    std::string get_description() const;
+    Column get_column() const;
+    int get_client_id() const;
     VectorClock &get_clock();
 
     void set_task_id(int id);
     void set_description(std::string description);
     void set_column(Column column);
     void set_client_id(int id);
+
+    // Marshalling
+    int Size() const;
+    void Marshal(char *buffer) const;
+    void Unmarshal(const char *buffer);
 };
 
 class LogEntry
@@ -85,6 +90,11 @@ public:
     std::string get_description() const;
     Column get_column() const;
     int get_client_id() const;
+
+    // Marshalling
+    int Size() const;
+    void Marshal(char *buffer) const;
+    void Unmarshal(const char *buffer);
 };
 
 #endif

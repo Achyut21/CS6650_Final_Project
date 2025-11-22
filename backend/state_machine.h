@@ -5,49 +5,31 @@
 #include <mutex>
 #include "messages.h"
 #include "task_manager.h"
-class StateMachine
-{
+
+// State machine log for operation logging and replay
+class StateMachine {
 private:
-    std::vector<LogEntry> smr_log;
-    mutable std::mutex state_mutex;
-
-    int last_index;
-    int committed_index;
-
-    int server_id;
-    int primary_id;
-
-    TaskManager *task_manager;
-
-    // Private helper - no locking
-    void apply_entry_internal(int index);
+    std::vector<LogEntry> log;
+    mutable std::mutex log_mutex;
+    int next_entry_id;
 
 public:
-    StateMachine(int id, TaskManager *tm);
-
-    // Log Management
-    void append_to_log(const LogEntry &entry);
-    void apply_entry(int index);
-    void commit_up_to(int index);
-
-    LogEntry get_log_entry(int index) const;
+    StateMachine();
+    
+    // Append operation to log
+    void append_to_log(const LogEntry& entry);
+    
+    // Get entire log
     std::vector<LogEntry> get_log() const;
-    std::vector<LogEntry> get_log_after(int index) const;
-
-    // Replay
-    void replay_log();
-    void replay_from(int start_index);
-
-    // Getters
-    int get_last_index();
-    int get_committed_index();
-    int get_primary_id();
-    int get_server_id();
-
-    // Setters
-    void set_primary_id(int id);
-
-    // Primary-Backup Specific
-    bool is_primary() const;
+    
+    // Get log entries after given id
+    std::vector<LogEntry> get_log_after(int entry_id) const;
+    
+    // Replay log entries on TaskManager
+    void replay_log(TaskManager& tm, const std::vector<LogEntry>& entries);
+    
+    // Get log size
+    size_t get_log_size() const;
 };
+
 #endif

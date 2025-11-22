@@ -3,58 +3,71 @@ CXXFLAGS = -std=c++11 -Wall -Wextra -g
 LDFLAGS = -pthread
 
 # Source files
-SOURCES = messages.cpp task_manager.cpp state_machine.cpp
+SOURCES = messages.cpp task_manager.cpp state_machine.cpp Socket.cpp ClientStub.cpp ServerStub.cpp replication.cpp
 OBJECTS = $(SOURCES:.cpp=.o)
 
 # Test files
-TASK_TEST_SOURCES = task_test.cpp
-TASK_TEST_OBJECTS = $(TASK_TEST_SOURCES:.cpp=.o)
-TASK_TEST_EXEC = run_task_tests
+TEST_SOURCES = task_test.cpp
+TEST_OBJECTS = $(TEST_SOURCES:.cpp=.o)
+TEST_EXEC = run_tests
 
-STATE_TEST_SOURCES = state_machine_test.cpp
-STATE_TEST_OBJECTS = $(STATE_TEST_SOURCES:.cpp=.o)
-STATE_TEST_EXEC = run_state_tests
+# State machine test files
+SM_TEST_SOURCES = state_machine_test.cpp
+SM_TEST_OBJECTS = $(SM_TEST_SOURCES:.cpp=.o)
+SM_TEST_EXEC = run_sm_tests
 
-# Main executable (if you have a main later)
-MAIN_EXEC = task_app
+# Master server
+MASTER_SOURCES = master.cpp
+MASTER_OBJECTS = $(MASTER_SOURCES:.cpp=.o)
+MASTER_EXEC = master
 
-.PHONY: all clean test test_task test_state
+# Backup server
+BACKUP_SOURCES = backup.cpp
+BACKUP_OBJECTS = $(BACKUP_SOURCES:.cpp=.o)
+BACKUP_EXEC = backup
 
-# Default target: build all tests
-all: $(TASK_TEST_EXEC) $(STATE_TEST_EXEC)
+.PHONY: all clean test test_sm master backup
 
-# Build task manager test executable
-$(TASK_TEST_EXEC): $(OBJECTS) $(TASK_TEST_OBJECTS)
+# Default target: build all
+all: $(TEST_EXEC) $(SM_TEST_EXEC) $(MASTER_EXEC) $(BACKUP_EXEC)
+
+# Build test executable
+$(TEST_EXEC): $(OBJECTS) $(TEST_OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Build state machine test executable
-$(STATE_TEST_EXEC): $(OBJECTS) $(STATE_TEST_OBJECTS)
+$(SM_TEST_EXEC): $(OBJECTS) $(SM_TEST_OBJECTS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Build master executable
+$(MASTER_EXEC): $(OBJECTS) $(MASTER_OBJECTS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Build backup executable
+$(BACKUP_EXEC): $(OBJECTS) $(BACKUP_OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Compile object files
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# Run all tests
-test: test_task test_state
+# Run task tests
+test: $(TEST_EXEC)
+	./$(TEST_EXEC)
 
-# Run task manager tests only
-test_task: $(TASK_TEST_EXEC)
-	@echo "========================================="
-	@echo "Running Task Manager Tests"
-	@echo "========================================="
-	./$(TASK_TEST_EXEC)
+# Run state machine tests
+test_sm: $(SM_TEST_EXEC)
+	./$(SM_TEST_EXEC)
 
-# Run state machine tests only
-test_state: $(STATE_TEST_EXEC)
-	@echo "========================================="
-	@echo "Running State Machine Tests"
-	@echo "========================================="
-	./$(STATE_TEST_EXEC)
+# Build master only
+master: $(MASTER_EXEC)
+
+# Build backup only
+backup: $(BACKUP_EXEC)
 
 # Clean build artifacts
 clean:
-	rm -f $(OBJECTS) $(TASK_TEST_OBJECTS) $(STATE_TEST_OBJECTS) $(TASK_TEST_EXEC) $(STATE_TEST_EXEC) $(MAIN_EXEC)
+	rm -f $(OBJECTS) $(TEST_OBJECTS) $(SM_TEST_OBJECTS) $(MASTER_OBJECTS) $(BACKUP_OBJECTS) $(TEST_EXEC) $(SM_TEST_EXEC) $(MASTER_EXEC) $(BACKUP_EXEC)
 
 # Dependencies
 messages.o: messages.cpp messages.h
@@ -62,3 +75,9 @@ task_manager.o: task_manager.cpp task_manager.h messages.h
 state_machine.o: state_machine.cpp state_machine.h messages.h task_manager.h
 task_test.o: task_test.cpp task_manager.h messages.h
 state_machine_test.o: state_machine_test.cpp state_machine.h task_manager.h messages.h
+Socket.o: Socket.cpp Socket.h
+ClientStub.o: ClientStub.cpp ClientStub.h Socket.h messages.h
+ServerStub.o: ServerStub.cpp ServerStub.h Socket.h messages.h
+replication.o: replication.cpp replication.h Socket.h ClientStub.h messages.h
+master.o: master.cpp Socket.h ServerStub.h task_manager.h messages.h
+backup.o: backup.cpp Socket.h ServerStub.h task_manager.h state_machine.h messages.h
