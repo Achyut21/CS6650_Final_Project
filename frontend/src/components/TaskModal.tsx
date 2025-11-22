@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { Task } from '@/types/task';
 import { Column } from '@/types/task';
 
@@ -11,23 +11,13 @@ interface TaskModalProps {
 
 /**
  * Modal for creating and editing tasks
+ * Use key={task?.task_id ?? 'new'} when rendering to reset form state
  */
 export function TaskModal({ isOpen, task, onClose, onSave }: TaskModalProps) {
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [column, setColumn] = useState<Column>(Column.TODO);
-
-  useEffect(() => {
-    if (task) {
-      setTitle(task.title);
-      setDescription(task.description);
-      setColumn(task.column);
-    } else {
-      setTitle('');
-      setDescription('');
-      setColumn(Column.TODO);
-    }
-  }, [task, isOpen]);
+  // Initialize from props - component remounts when key changes
+  const [title, setTitle] = useState(task?.title ?? '');
+  const [description, setDescription] = useState(task?.description ?? '');
+  const [column, setColumn] = useState<Column>(task?.column ?? Column.TODO);
 
   if (!isOpen) return null;
 
