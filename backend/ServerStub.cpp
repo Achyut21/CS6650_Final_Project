@@ -84,6 +84,24 @@ bool ServerStub::SendTask(const Task& task) {
     return result;
 }
 
+bool ServerStub::SendTaskList(const std::vector<Task>& tasks) {
+    // Send count first
+    int count = tasks.size();
+    int net_count = htonl(count);
+    if (!socket->Send(&net_count, sizeof(int))) {
+        return false;
+    }
+    
+    // Send each task
+    for (const Task& task : tasks) {
+        if (!SendTask(task)) {
+            return false;
+        }
+    }
+    
+    return true;
+}
+
 bool ServerStub::SendSuccess(bool success) {
     int result = success ? 1 : 0;
     int net_result = htonl(result);
@@ -96,3 +114,14 @@ void ServerStub::Close() {
     }
 }
 
+
+bool ServerStub::SendOperationResponse(const OperationResponse& response) {
+    // Send 4 integers: success, conflict, rejected, task_id
+    int buffer[4];
+    buffer[0] = htonl(response.success ? 1 : 0);
+    buffer[1] = htonl(response.conflict ? 1 : 0);
+    buffer[2] = htonl(response.rejected ? 1 : 0);
+    buffer[3] = htonl(response.updated_task_id);
+    
+    return socket->Send(buffer, sizeof(buffer));
+}

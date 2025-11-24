@@ -1,7 +1,9 @@
 #!/bin/bash
 
+# Master Failover Test
+
 echo "=========================================="
-echo "PHASE 8: Testing Master Failover"
+echo "Testing Master Failover"
 echo "=========================================="
 echo ""
 
@@ -16,13 +18,19 @@ echo ""
 echo "Press Enter to start..."
 read
 
+# Get script directory and project paths
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+BACKEND_DIR="$PROJECT_ROOT/backend"
+GATEWAY_DIR="$PROJECT_ROOT/gateway"
+
 # Cleanup
 pkill -9 master backup node 2>/dev/null
 sleep 1
 
 echo ""
 echo "Step 1: Starting backup on port 12346..."
-cd /Users/achyutkatiyar/CS6650/FinalProject/backend
+cd "$BACKEND_DIR"
 ./backup 12346 1 127.0.0.1 12345 &
 BACKUP_PID=$!
 sleep 2
@@ -33,7 +41,7 @@ MASTER_PID=$!
 sleep 2
 
 echo "Step 3: Starting gateway..."
-cd /Users/achyutkatiyar/CS6650/FinalProject/gateway
+cd "$GATEWAY_DIR"
 node server.js &
 GATEWAY_PID=$!
 sleep 3
@@ -70,16 +78,16 @@ RESPONSE=$(curl -s -X POST http://localhost:8080/api/tasks \
   -d '{"title":"After Failover","description":"This task created after master died","column":0,"created_by":"test","board_id":"board-1"}')
 
 if echo "$RESPONSE" | grep -q "task_id"; then
-    echo "  ✅ SUCCESS: Gateway failed over to backup!"
+    echo "  SUCCESS: Gateway failed over to backup"
     echo "  Response: $RESPONSE"
 else
-    echo "  ❌ FAILED: Could not create task after failover"
+    echo "  FAILED: Could not create task after failover"
     echo "  Response: $RESPONSE"
 fi
 
 echo ""
 echo "=========================================="
-echo "Failover test complete!"
+echo "Failover test complete"
 echo "=========================================="
 echo ""
 echo "Cleanup: kill $BACKUP_PID $GATEWAY_PID"

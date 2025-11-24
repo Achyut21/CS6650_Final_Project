@@ -16,6 +16,8 @@ bool is_promoted = false;
 std::string backup_ip = "127.0.0.1";
 int backup_port = 12346;
 Socket* global_server_socket = nullptr;
+std::map<int, VectorClock> client_clocks;  // Track vector clock per client after promotion
+std::mutex clock_mutex;
 
 void SignalHandler(int) {
     std::cout << "\nShutting down backup...\n";
@@ -48,17 +50,47 @@ void HandleClient(Socket* client_socket, int client_id) {
         
         switch (op_type) {
             case OpType::CREATE_TASK:
-                success = task_manager.create_task(task.get_description(), task.get_client_id());
+                success = task_manager.create_task(
+                    task.get_title(),
+                    task.get_description(),
+                    task.get_board_id(),
+                    task.get_created_by(),
+                    task.get_client_id()
+                );
                 if (success) std::cout << "Created task (promoted backup)\n";
                 break;
                 
             case OpType::UPDATE_TASK:
-                success = task_manager.update_task(task.get_task_id(), task.get_description());
+                {
+                    VectorClock vc(client_id);
+                    std::lock_guard<std::mutex> lock(clock_mutex);
+                    auto it = client_clocks.find(client_id);
+                    if (it != client_clocks.end()) {
+                        vc = it->second;
+                        vc.increment();
+                        it->second = vc;
+                    } else {
+                        client_clocks.insert({client_id, vc});
+                    }
+                    success = task_manager.update_task(task.get_task_id(), task.get_description(), vc);
+                }
                 if (success) std::cout << "Updated task " << task.get_task_id() << "\n";
                 break;
                 
             case OpType::MOVE_TASK:
-                success = task_manager.move_task(task.get_task_id(), task.get_column());
+                {
+                    VectorClock vc(client_id);
+                    std::lock_guard<std::mutex> lock(clock_mutex);
+                    auto it = client_clocks.find(client_id);
+                    if (it != client_clocks.end()) {
+                        vc = it->second;
+                        vc.increment();
+                        it->second = vc;
+                    } else {
+                        client_clocks.insert({client_id, vc});
+                    }
+                    success = task_manager.move_task(task.get_task_id(), task.get_column(), vc);
+                }
                 if (success) std::cout << "Moved task " << task.get_task_id() << "\n";
                 break;
                 
@@ -66,6 +98,13 @@ void HandleClient(Socket* client_socket, int client_id) {
                 success = task_manager.delete_task(task.get_task_id());
                 if (success) std::cout << "Deleted task " << task.get_task_id() << "\n";
                 break;
+                
+            case OpType::GET_BOARD: {
+                std::vector<Task> all_tasks = task_manager.get_all_tasks();
+                std::cout << "GET_BOARD request - returning " << all_tasks.size() << " tasks\n";
+                stub.SendTaskList(all_tasks);
+                continue; // Skip SendSuccess
+            }
                 
             default:
                 break;
@@ -107,8 +146,10 @@ void HandleReplication(Socket* client_socket) {
         // Append to state machine log
         state_machine.append_to_log(entry);
         
-        // Apply operation to task manager
+        // Apply operation to task manager with vector clock
         OpType op = entry.get_op_type();
+        const VectorClock& vc = entry.get_timestamp();
+        
         switch (op) {
             case OpType::CREATE_TASK:
                 task_manager.create_task(entry.get_description(), entry.get_client_id());
@@ -116,18 +157,22 @@ void HandleReplication(Socket* client_socket) {
                 break;
                 
             case OpType::UPDATE_TASK:
-                task_manager.update_task(entry.get_task_id(), entry.get_description());
+                task_manager.update_task(entry.get_task_id(), entry.get_description(), vc);
                 std::cout << "Replicated UPDATE_TASK\n";
                 break;
                 
             case OpType::MOVE_TASK:
-                task_manager.move_task(entry.get_task_id(), entry.get_column());
+                task_manager.move_task(entry.get_task_id(), entry.get_column(), vc);
                 std::cout << "Replicated MOVE_TASK\n";
                 break;
                 
             case OpType::DELETE_TASK:
                 task_manager.delete_task(entry.get_task_id());
                 std::cout << "Replicated DELETE_TASK\n";
+                break;
+                
+            case OpType::GET_BOARD:
+                // GET_BOARD is not a state-changing operation, skip in replication
                 break;
         }
         

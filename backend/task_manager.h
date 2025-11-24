@@ -16,11 +16,19 @@ private:
 
 public:
     TaskManager();
+    // New signature with all fields
+    bool create_task(std::string title, std::string description, std::string board_id, 
+                     std::string created_by, int client_id);
+    // Backward compatible signature for tests
     bool create_task(std::string description, int client_id);
-    bool update_task(int task_id, const std::string &description);
-    bool move_task(int task_id, Column column);
+    
+    OperationResponse update_task_with_conflict_detection(int task_id, const std::string &description, const VectorClock &vc);
+    OperationResponse move_task_with_conflict_detection(int task_id, Column column, const VectorClock &vc);
+    bool update_task(int task_id, const std::string &description, const VectorClock &vc);
+    bool move_task(int task_id, Column column, const VectorClock &vc);
     bool delete_task(int task_id);
     Task get_task(int id);
+    std::vector<Task> get_all_tasks();
 
     // SMR methods
     void append_to_log(const LogEntry &entry);

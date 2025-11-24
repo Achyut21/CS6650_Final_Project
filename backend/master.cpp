@@ -16,6 +16,8 @@ ReplicationManager* replication_manager = nullptr;
 bool server_running = true;
 int next_entry_id = 0;
 Socket* global_server_socket = nullptr;
+std::map<int, VectorClock> client_clocks;  // Track vector clock per client
+std::mutex clock_mutex;
 
 void SignalHandler(int) {
     std::cout << "\nShutting down server...\n";
@@ -48,18 +50,35 @@ void HandleClient(Socket* client_socket, int client_id) {
         // Receive task data
         Task task = stub.ReceiveTask();
         bool success = false;
+        OperationResponse op_response;
         
         // Process based on operation type
         switch (op_type) {
             case OpType::CREATE_TASK: {
+                // Get or create vector clock for this client
+                VectorClock vc(client_id);
+                {
+                    std::lock_guard<std::mutex> clock_lock(clock_mutex);
+                    auto clock_it = client_clocks.find(client_id);
+                    if (clock_it != client_clocks.end()) {
+                        vc = clock_it->second;
+                        vc.increment();
+                        clock_it->second = vc;
+                    } else {
+                        client_clocks.insert({client_id, vc});
+                    }
+                }
+                
                 success = task_manager.create_task(
+                    task.get_title(),
                     task.get_description(),
+                    task.get_board_id(),
+                    task.get_created_by(),
                     task.get_client_id()
                 );
                 
                 if (success) {
-                    // Create log entry and replicate
-                    VectorClock vc(0);
+                    // Create log entry with proper vector clock
                     LogEntry entry(next_entry_id++, op_type, vc, 
                                  task_manager.get_task_count() - 1,
                                  task.get_description(), 
@@ -78,13 +97,29 @@ void HandleClient(Socket* client_socket, int client_id) {
             }
             
             case OpType::UPDATE_TASK: {
-                success = task_manager.update_task(
-                    task.get_task_id(),
-                    task.get_description()
-                );
+                // Get or increment vector clock for this client
+                VectorClock vc(client_id);
+                {
+                    std::lock_guard<std::mutex> clock_lock(clock_mutex);
+                    auto clock_it = client_clocks.find(client_id);
+                    if (clock_it != client_clocks.end()) {
+                        vc = clock_it->second;
+                        vc.increment();
+                        clock_it->second = vc;
+                    } else {
+                        client_clocks.insert({client_id, vc});
+                    }
+                }
                 
-                if (success) {
-                    VectorClock vc(0);
+                // Use conflict detection version
+                op_response = task_manager.update_task_with_conflict_detection(
+                    task.get_task_id(),
+                    task.get_description(),
+                    vc
+                );
+                success = op_response.success;
+                
+                if (success && !op_response.rejected) {
                     LogEntry entry(next_entry_id++, op_type, vc,
                                  task.get_task_id(),
                                  task.get_description(),
@@ -97,19 +132,42 @@ void HandleClient(Socket* client_socket, int client_id) {
                         replication_manager->replicate_entry(entry);
                     }
                     
-                    std::cout << "Updated task " << task.get_task_id() << "\n";
+                    if (op_response.conflict) {
+                        std::cout << "Updated task " << task.get_task_id() << " (with conflict resolution)\n";
+                    } else {
+                        std::cout << "Updated task " << task.get_task_id() << "\n";
+                    }
                 }
-                break;
+                
+                // Send detailed response
+                stub.SendOperationResponse(op_response);
+                continue; // Skip the default SendSuccess
             }
             
             case OpType::MOVE_TASK: {
-                success = task_manager.move_task(
-                    task.get_task_id(),
-                    task.get_column()
-                );
+                // Get or increment vector clock for this client
+                VectorClock vc(client_id);
+                {
+                    std::lock_guard<std::mutex> clock_lock(clock_mutex);
+                    auto clock_it = client_clocks.find(client_id);
+                    if (clock_it != client_clocks.end()) {
+                        vc = clock_it->second;
+                        vc.increment();
+                        clock_it->second = vc;
+                    } else {
+                        client_clocks.insert({client_id, vc});
+                    }
+                }
                 
-                if (success) {
-                    VectorClock vc(0);
+                // Use conflict detection version
+                op_response = task_manager.move_task_with_conflict_detection(
+                    task.get_task_id(),
+                    task.get_column(),
+                    vc
+                );
+                success = op_response.success;
+                
+                if (success && !op_response.rejected) {
                     LogEntry entry(next_entry_id++, op_type, vc,
                                  task.get_task_id(),
                                  "",
@@ -122,17 +180,39 @@ void HandleClient(Socket* client_socket, int client_id) {
                         replication_manager->replicate_entry(entry);
                     }
                     
-                    std::cout << "Moved task " << task.get_task_id() 
-                              << " to column " << static_cast<int>(task.get_column()) << "\n";
+                    if (op_response.conflict) {
+                        std::cout << "Moved task " << task.get_task_id() 
+                                  << " to column " << static_cast<int>(task.get_column()) 
+                                  << " (with conflict resolution)\n";
+                    } else {
+                        std::cout << "Moved task " << task.get_task_id() 
+                                  << " to column " << static_cast<int>(task.get_column()) << "\n";
+                    }
                 }
-                break;
+                
+                // Send detailed response
+                stub.SendOperationResponse(op_response);
+                continue; // Skip the default SendSuccess
             }
             
             case OpType::DELETE_TASK: {
+                // Increment vector clock for delete operation
+                VectorClock vc(client_id);
+                {
+                    std::lock_guard<std::mutex> clock_lock(clock_mutex);
+                    auto clock_it = client_clocks.find(client_id);
+                    if (clock_it != client_clocks.end()) {
+                        vc = clock_it->second;
+                        vc.increment();
+                        clock_it->second = vc;
+                    } else {
+                        client_clocks.insert({client_id, vc});
+                    }
+                }
+                
                 success = task_manager.delete_task(task.get_task_id());
                 
                 if (success) {
-                    VectorClock vc(0);
                     LogEntry entry(next_entry_id++, op_type, vc,
                                  task.get_task_id(),
                                  "",
@@ -148,6 +228,17 @@ void HandleClient(Socket* client_socket, int client_id) {
                     std::cout << "Deleted task " << task.get_task_id() << "\n";
                 }
                 break;
+            }
+            
+            case OpType::GET_BOARD: {
+                // Return all tasks
+                std::vector<Task> all_tasks = task_manager.get_all_tasks();
+                std::cout << "GET_BOARD request - returning " << all_tasks.size() << " tasks\n";
+                
+                if (!stub.SendTaskList(all_tasks)) {
+                    std::cerr << "Failed to send task list\n";
+                }
+                continue; // Skip the SendSuccess call
             }
             
             default:

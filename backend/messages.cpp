@@ -82,15 +82,22 @@ const std::map<int, int> &VectorClock::get_clock() const
 
 /* Task Methods */
 
-// TODO: Add Due Date mechanism for task
+Task::Task() : task_id(-1), title(""), description(""), board_id("board-1"), 
+               created_by(""), column(Column::TODO), client_id(-1), 
+               created_at(0), updated_at(0), vclock(0) {}
 
-Task::Task() : task_id(-1), description(""), column(Column::TODO), client_id(-1), vclock(0) {}
-
-Task::Task(int task_id, std::string description, Column column, int client_id) : task_id(task_id),
-                                                                                 description(description),
-                                                                                 column(column),
-                                                                                 client_id(client_id),
-                                                                                 vclock(client_id)
+Task::Task(int task_id, std::string title, std::string description,
+           std::string board_id, std::string created_by, Column column, int client_id) 
+    : task_id(task_id),
+      title(title),
+      description(description),
+      board_id(board_id),
+      created_by(created_by),
+      column(column),
+      client_id(client_id),
+      created_at(0),  // Set by caller if needed
+      updated_at(0),  // Set by caller if needed
+      vclock(client_id)
 {
 }
 
@@ -99,9 +106,24 @@ int Task::get_task_id() const
     return task_id;
 }
 
+std::string Task::get_title() const
+{
+    return title;
+}
+
 std::string Task::get_description() const
 {
     return description;
+}
+
+std::string Task::get_board_id() const
+{
+    return board_id;
+}
+
+std::string Task::get_created_by() const
+{
+    return created_by;
 }
 
 Column Task::get_column() const
@@ -112,6 +134,16 @@ Column Task::get_column() const
 int Task::get_client_id() const
 {
     return client_id;
+}
+
+long long Task::get_created_at() const
+{
+    return created_at;
+}
+
+long long Task::get_updated_at() const
+{
+    return updated_at;
 }
 
 VectorClock &Task::get_clock()
@@ -139,6 +171,26 @@ void Task::set_client_id(int id)
     this->client_id = id;
 }
 
+void Task::set_title(std::string title)
+{
+    this->title = title;
+}
+
+void Task::set_board_id(std::string board_id)
+{
+    this->board_id = board_id;
+}
+
+void Task::set_created_by(std::string created_by)
+{
+    this->created_by = created_by;
+}
+
+void Task::set_updated_at(long long timestamp)
+{
+    this->updated_at = timestamp;
+}
+
 // Task marshalling: task_id + description_len + description + column + client_id + vclock_size + vclock_data
 int Task::Size() const
 {
@@ -158,13 +210,37 @@ void Task::Marshal(char *buffer) const
     memcpy(buffer + offset, &net_task_id, sizeof(int));
     offset += sizeof(int);
     
-    // description length and data
+    // title
+    int title_len = title.length();
+    int net_title_len = htonl(title_len);
+    memcpy(buffer + offset, &net_title_len, sizeof(int));
+    offset += sizeof(int);
+    memcpy(buffer + offset, title.c_str(), title_len);
+    offset += title_len;
+    
+    // description
     int desc_len = description.length();
     int net_desc_len = htonl(desc_len);
     memcpy(buffer + offset, &net_desc_len, sizeof(int));
     offset += sizeof(int);
     memcpy(buffer + offset, description.c_str(), desc_len);
     offset += desc_len;
+    
+    // board_id
+    int board_id_len = board_id.length();
+    int net_board_id_len = htonl(board_id_len);
+    memcpy(buffer + offset, &net_board_id_len, sizeof(int));
+    offset += sizeof(int);
+    memcpy(buffer + offset, board_id.c_str(), board_id_len);
+    offset += board_id_len;
+    
+    // created_by
+    int created_by_len = created_by.length();
+    int net_created_by_len = htonl(created_by_len);
+    memcpy(buffer + offset, &net_created_by_len, sizeof(int));
+    offset += sizeof(int);
+    memcpy(buffer + offset, created_by.c_str(), created_by_len);
+    offset += created_by_len;
     
     // column
     int net_column = htonl(static_cast<int>(column));
@@ -175,6 +251,16 @@ void Task::Marshal(char *buffer) const
     int net_client_id = htonl(client_id);
     memcpy(buffer + offset, &net_client_id, sizeof(int));
     offset += sizeof(int);
+    
+    // created_at (8 bytes)
+    long long net_created_at = htonll(created_at);
+    memcpy(buffer + offset, &net_created_at, sizeof(long long));
+    offset += sizeof(long long);
+    
+    // updated_at (8 bytes)
+    long long net_updated_at = htonll(updated_at);
+    memcpy(buffer + offset, &net_updated_at, sizeof(long long));
+    offset += sizeof(long long);
     
     // vector clock
     const auto& clock_map = vclock.get_clock();
@@ -203,6 +289,14 @@ void Task::Unmarshal(const char *buffer)
     task_id = ntohl(net_task_id);
     offset += sizeof(int);
     
+    // title
+    int net_title_len;
+    memcpy(&net_title_len, buffer + offset, sizeof(int));
+    int title_len = ntohl(net_title_len);
+    offset += sizeof(int);
+    title.assign(buffer + offset, title_len);
+    offset += title_len;
+    
     // description
     int net_desc_len;
     memcpy(&net_desc_len, buffer + offset, sizeof(int));
@@ -210,6 +304,22 @@ void Task::Unmarshal(const char *buffer)
     offset += sizeof(int);
     description.assign(buffer + offset, desc_len);
     offset += desc_len;
+    
+    // board_id
+    int net_board_id_len;
+    memcpy(&net_board_id_len, buffer + offset, sizeof(int));
+    int board_id_len = ntohl(net_board_id_len);
+    offset += sizeof(int);
+    board_id.assign(buffer + offset, board_id_len);
+    offset += board_id_len;
+    
+    // created_by
+    int net_created_by_len;
+    memcpy(&net_created_by_len, buffer + offset, sizeof(int));
+    int created_by_len = ntohl(net_created_by_len);
+    offset += sizeof(int);
+    created_by.assign(buffer + offset, created_by_len);
+    offset += created_by_len;
     
     // column
     int net_column;
@@ -222,6 +332,18 @@ void Task::Unmarshal(const char *buffer)
     memcpy(&net_client_id, buffer + offset, sizeof(int));
     client_id = ntohl(net_client_id);
     offset += sizeof(int);
+    
+    // created_at (8 bytes)
+    long long net_created_at;
+    memcpy(&net_created_at, buffer + offset, sizeof(long long));
+    created_at = ntohll(net_created_at);
+    offset += sizeof(long long);
+    
+    // updated_at (8 bytes)
+    long long net_updated_at;
+    memcpy(&net_updated_at, buffer + offset, sizeof(long long));
+    updated_at = ntohll(net_updated_at);
+    offset += sizeof(long long);
     
     // vector clock - reconstruct
     int net_clock_size;

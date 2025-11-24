@@ -37,7 +37,8 @@ const OpType = {
   CREATE_TASK: 0,
   UPDATE_TASK: 1,
   MOVE_TASK: 2,
-  DELETE_TASK: 3
+  DELETE_TASK: 3,
+  GET_BOARD: 4
 };
 
 // Column enum
@@ -97,9 +98,21 @@ async function sendToBackend(opType, taskData, retryWithBackup = true) {
     client.on('end', () => {
       console.log('[DEBUG] Connection ended, total response:', responseData.length, 'bytes');
       try {
-        const success = responseData.readInt32BE(0) === 1;
-        console.log('[DEBUG] Success value:', success);
-        resolve({ success });
+        // Response is now 4 integers: success, conflict, rejected, task_id
+        if (responseData.length >= 16) {
+          const success = responseData.readInt32BE(0) === 1;
+          const conflict = responseData.readInt32BE(4) === 1;
+          const rejected = responseData.readInt32BE(8) === 1;
+          const taskId = responseData.readInt32BE(12);
+          
+          console.log('[DEBUG] Response - success:', success, 'conflict:', conflict, 'rejected:', rejected);
+          resolve({ success, conflict, rejected, taskId });
+        } else {
+          // just success boolean
+          const success = responseData.readInt32BE(0) === 1;
+          console.log('[DEBUG] Success value:', success);
+          resolve({ success, conflict: false, rejected: false });
+        }
       } catch (err) {
         console.error('[DEBUG] Error parsing response:', err);
         reject(err);
@@ -134,20 +147,44 @@ async function sendToBackend(opType, taskData, retryWithBackup = true) {
 
 // Serialize task to binary format for C++ backend
 function serializeTask(task) {
-  const buffer = Buffer.alloc(1024); // Enough space
+  const buffer = Buffer.alloc(2048); // More space for all fields
   let offset = 0;
   
   // task_id (4 bytes)
   buffer.writeInt32BE(task.task_id || 0, offset);
   offset += 4;
   
+  // title length (4 bytes) + title
+  const title = task.title || '';
+  const titleLen = Buffer.byteLength(title, 'utf8');
+  buffer.writeInt32BE(titleLen, offset);
+  offset += 4;
+  buffer.write(title, offset, titleLen, 'utf8');
+  offset += titleLen;
+  
   // description length (4 bytes) + description
-  const desc = task.description || task.title || '';
+  const desc = task.description || '';
   const descLen = Buffer.byteLength(desc, 'utf8');
   buffer.writeInt32BE(descLen, offset);
   offset += 4;
   buffer.write(desc, offset, descLen, 'utf8');
   offset += descLen;
+  
+  // board_id length (4 bytes) + board_id
+  const boardId = task.board_id || 'board-1';
+  const boardIdLen = Buffer.byteLength(boardId, 'utf8');
+  buffer.writeInt32BE(boardIdLen, offset);
+  offset += 4;
+  buffer.write(boardId, offset, boardIdLen, 'utf8');
+  offset += boardIdLen;
+  
+  // created_by length (4 bytes) + created_by
+  const createdBy = task.created_by || 'user';
+  const createdByLen = Buffer.byteLength(createdBy, 'utf8');
+  buffer.writeInt32BE(createdByLen, offset);
+  offset += 4;
+  buffer.write(createdBy, offset, createdByLen, 'utf8');
+  offset += createdByLen;
   
   // column (4 bytes)
   buffer.writeInt32BE(task.column || 0, offset);
@@ -157,6 +194,14 @@ function serializeTask(task) {
   buffer.writeInt32BE(task.client_id || 0, offset);
   offset += 4;
   
+  // created_at (8 bytes) - will be set by backend, send 0
+  buffer.writeBigInt64BE(BigInt(task.created_at || 0), offset);
+  offset += 8;
+  
+  // updated_at (8 bytes) - will be set by backend, send 0
+  buffer.writeBigInt64BE(BigInt(task.updated_at || 0), offset);
+  offset += 8;
+  
   // vector clock size (0 for now)
   buffer.writeInt32BE(0, offset);
   offset += 4;
@@ -164,16 +209,162 @@ function serializeTask(task) {
   return buffer.slice(0, offset);
 }
 
+// Deserialize task from binary format
+function deserializeTask(buffer, offset = 0) {
+  let pos = offset;
+  
+  // task_id (4 bytes)
+  const task_id = buffer.readInt32BE(pos);
+  pos += 4;
+  
+  // title length + title
+  const titleLen = buffer.readInt32BE(pos);
+  pos += 4;
+  const title = buffer.toString('utf8', pos, pos + titleLen);
+  pos += titleLen;
+  
+  // description length + description
+  const descLen = buffer.readInt32BE(pos);
+  pos += 4;
+  const description = buffer.toString('utf8', pos, pos + descLen);
+  pos += descLen;
+  
+  // board_id length + board_id
+  const boardIdLen = buffer.readInt32BE(pos);
+  pos += 4;
+  const board_id = buffer.toString('utf8', pos, pos + boardIdLen);
+  pos += boardIdLen;
+  
+  // created_by length + created_by
+  const createdByLen = buffer.readInt32BE(pos);
+  pos += 4;
+  const created_by = buffer.toString('utf8', pos, pos + createdByLen);
+  pos += createdByLen;
+  
+  // column (4 bytes)
+  const column = buffer.readInt32BE(pos);
+  pos += 4;
+  
+  // client_id (4 bytes)
+  const client_id = buffer.readInt32BE(pos);
+  pos += 4;
+  
+  // created_at (8 bytes)
+  const created_at = Number(buffer.readBigInt64BE(pos));
+  pos += 8;
+  
+  // updated_at (8 bytes)
+  const updated_at = Number(buffer.readBigInt64BE(pos));
+  pos += 8;
+  
+  // vector clock size
+  const clockSize = buffer.readInt32BE(pos);
+  pos += 4;
+  
+  // skip vector clock data for now
+  pos += clockSize * 8; // each entry: process_id (4) + count (4)
+  
+  return {
+    task: {
+      task_id,
+      board_id,
+      title,
+      description,
+      column,
+      created_by,
+      vector_clock: {},
+      created_at,
+      updated_at
+    },
+    bytesRead: pos - offset
+  };
+}
+
+// Get all tasks from backend
+async function getBoardFromBackend() {
+  return new Promise((resolve, reject) => {
+    const client = new net.Socket();
+    let responseData = Buffer.alloc(0);
+    
+    client.connect(currentBackendPort, currentBackendHost, () => {
+      try {
+        console.log('[GET_BOARD] Requesting all tasks from backend...');
+        
+        // Send GET_BOARD operation type
+        const opBuffer = Buffer.alloc(4);
+        opBuffer.writeInt32BE(OpType.GET_BOARD, 0);
+        client.write(opBuffer);
+        
+        // Send empty task (required by protocol but unused)
+        const emptyTask = serializeTask({ task_id: 0, description: '', column: 0, client_id: 0 });
+        const sizeBuffer = Buffer.alloc(4);
+        sizeBuffer.writeInt32BE(emptyTask.length, 0);
+        client.write(sizeBuffer);
+        client.write(emptyTask);
+        
+        client.end();
+      } catch (err) {
+        client.destroy();
+        reject(err);
+      }
+    });
+    
+    client.on('data', (data) => {
+      responseData = Buffer.concat([responseData, data]);
+    });
+    
+    client.on('end', () => {
+      try {
+        console.log('[GET_BOARD] Received response:', responseData.length, 'bytes');
+        
+        // Read count (4 bytes)
+        const count = responseData.readInt32BE(0);
+        console.log('[GET_BOARD] Task count:', count);
+        
+        const tasks = [];
+        let offset = 4;
+        
+        // Read each task
+        for (let i = 0; i < count; i++) {
+          // Read size
+          const size = responseData.readInt32BE(offset);
+          offset += 4;
+          
+          // Deserialize task
+          const result = deserializeTask(responseData, offset);
+          tasks.push(result.task);
+          offset += result.bytesRead;
+        }
+        
+        console.log('[GET_BOARD] Parsed', tasks.length, 'tasks');
+        resolve(tasks);
+      } catch (err) {
+        console.error('[GET_BOARD] Error parsing response:', err);
+        reject(err);
+      }
+    });
+    
+    client.on('error', (err) => {
+      console.error('[GET_BOARD] Socket error:', err.message);
+      reject(err);
+    });
+    
+    client.setTimeout(5000, () => {
+      client.destroy();
+      reject(new Error('GET_BOARD timeout'));
+    });
+  });
+}
+
 // REST API Endpoints
 
 // GET /api/boards/:id - Get all tasks for a board
 app.get('/api/boards/:id', async (req, res) => {
   try {
-    // For now, return mock empty board
-    // In future, implement GET_BOARD operation in C++ backend
+    const tasks = await getBoardFromBackend();
     res.json({
       board_id: req.params.id,
-      tasks: []
+      tasks: tasks
     });
   } catch (err) {
     console.error('Error fetching board:', err);
@@ -188,7 +379,10 @@ app.post('/api/tasks', async (req, res) => {
     
     const taskData = {
       task_id: 0, // Will be assigned by backend
-      description: title || description,
+      title: title || '',
+      description: description || '',
+      board_id: board_id || 'board-1',
+      created_by: created_by || 'user',
       column: column || Column.TODO,
       client_id: 1 // Simple client ID for now
     };
@@ -242,8 +436,11 @@ app.patch('/api/tasks/:id', async (req, res) => {
       opType = OpType.MOVE_TASK;
       taskData = {
         task_id: taskId,
-        column: column,
+        title: '',
         description: '',
+        board_id: 'board-1',
+        created_by: 'user',
+        column: column,
         client_id: 1
       };
     } else {
@@ -252,7 +449,10 @@ app.patch('/api/tasks/:id', async (req, res) => {
       opType = OpType.UPDATE_TASK;
       taskData = {
         task_id: taskId,
-        description: title || description || '',
+        title: title || '',
+        description: description || '',
+        board_id: 'board-1',
+        created_by: 'user',
         column: Column.TODO,
         client_id: 1
       };
@@ -264,13 +464,26 @@ app.patch('/api/tasks/:id', async (req, res) => {
       const updatedTask = {
         task_id: taskId,
         ...req.body,
-        updated_at: Date.now()
+        updated_at: Date.now(),
+        conflict: result.conflict || false,
+        rejected: result.rejected || false
       };
       
       if (column !== undefined) {
         io.emit('TASK_MOVED', { task: updatedTask });
       } else {
         io.emit('TASK_UPDATED', { task: updatedTask });
+      }
+      
+      // Add conflict warning to response if detected
+      if (result.conflict) {
+        updatedTask.warning = 'Concurrent edit detected - applied with last-write-wins';
+      }
+      if (result.rejected) {
+        return res.status(409).json({ 
+          error: 'Update rejected - operation was outdated',
+          task: updatedTask 
+        });
       }
       
       res.json(updatedTask);
@@ -290,7 +503,10 @@ app.delete('/api/tasks/:id', async (req, res) => {
     
     const taskData = {
       task_id: taskId,
+      title: '',
       description: '',
+      board_id: 'board-1',
+      created_by: 'user',
       column: Column.TODO,
       client_id: 1
     };

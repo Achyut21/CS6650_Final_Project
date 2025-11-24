@@ -1,7 +1,10 @@
 #include "replication.h"
 #include <iostream>
 
-ReplicationManager::ReplicationManager(int id) : factory_id(id) {}
+ReplicationManager::ReplicationManager(int id) : factory_id(id) {
+    // Suppress unused warning - factory_id reserved for future use
+    (void)factory_id;
+}
 
 ReplicationManager::~ReplicationManager() {
     std::cout << "Closing replication connections..." << std::endl;

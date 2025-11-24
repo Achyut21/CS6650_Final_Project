@@ -77,6 +77,14 @@ export function Board() {
     loadTasks();
   }, [loadTasks]);
 
+  // Reload tasks on WebSocket reconnection to sync state
+  useEffect(() => {
+    if (wsStatus === 'connected') {
+      console.log('WebSocket reconnected - resyncing board state...');
+      loadTasks();
+    }
+  }, [wsStatus, loadTasks]);
+
   // Subscribe to WebSocket events for real-time updates
   useEffect(() => {
     const markAsRemoteUpdate = (taskId: number) => {

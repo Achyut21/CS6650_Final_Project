@@ -24,7 +24,9 @@ public:
     
     // Send responses
     bool SendTask(const Task& task);
+    bool SendTaskList(const std::vector<Task>& tasks);
     bool SendSuccess(bool success);
+    bool SendOperationResponse(const OperationResponse& response);
     
     void Close();
 };

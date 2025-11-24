@@ -99,9 +99,10 @@ TEST(test_vector_clock_get_nonexistent)
 
 TEST(test_task_creation)
 {
-    Task task(1, "Test task", Column::TODO, 100);
+    Task task(1, "Test title", "Test task", "board-1", "user", Column::TODO, 100);
 
     ASSERT_EQUAL(task.get_task_id(), 1);
+    ASSERT_EQUAL(task.get_title(), "Test title");
     ASSERT_EQUAL(task.get_description(), "Test task");
     ASSERT_EQUAL(task.get_column(), Column::TODO);
     ASSERT_EQUAL(task.get_client_id(), 100);
@@ -109,7 +110,7 @@ TEST(test_task_creation)
 
 TEST(test_task_setters)
 {
-    Task task(1, "Original", Column::TODO, 100);
+    Task task(1, "Title", "Original", "board-1", "user", Column::TODO, 100);
 
     task.set_description("Updated");
     ASSERT_EQUAL(task.get_description(), "Updated");
@@ -126,7 +127,7 @@ TEST(test_task_setters)
 
 TEST(test_task_vector_clock_access)
 {
-    Task task(1, "Test", Column::TODO, 100);
+    Task task(1, "Title", "Test", "board-1", "user", Column::TODO, 100);
 
     // VectorClock should be initialized with client_id
     ASSERT_EQUAL(task.get_clock().get(100), 0);
@@ -187,7 +188,9 @@ TEST(test_task_manager_update_task)
     TaskManager tm;
     tm.create_task("Original", 1);
 
-    ASSERT_TRUE(tm.update_task(0, "Updated"));
+    VectorClock vc(1);
+    vc.increment();
+    ASSERT_TRUE(tm.update_task(0, "Updated", vc));
 
     Task task = tm.get_task(0);
     ASSERT_EQUAL(task.get_description(), "Updated");
@@ -196,7 +199,8 @@ TEST(test_task_manager_update_task)
 TEST(test_task_manager_update_nonexistent_task)
 {
     TaskManager tm;
-    ASSERT_FALSE(tm.update_task(999, "Updated"));
+    VectorClock vc(1);
+    ASSERT_FALSE(tm.update_task(999, "Updated", vc));
 }
 
 TEST(test_task_manager_move_task)
@@ -204,7 +208,9 @@ TEST(test_task_manager_move_task)
     TaskManager tm;
     tm.create_task("Task", 1);
 
-    ASSERT_TRUE(tm.move_task(0, Column::IN_PROGRESS));
+    VectorClock vc(1);
+    vc.increment();
+    ASSERT_TRUE(tm.move_task(0, Column::IN_PROGRESS, vc));
 
     Task task = tm.get_task(0);
     ASSERT_EQUAL(task.get_column(), Column::IN_PROGRESS);
@@ -216,7 +222,8 @@ TEST(test_task_manager_move_task_same_column)
     tm.create_task("Task", 1);
 
     // Moving to same column should return true
-    ASSERT_TRUE(tm.move_task(0, Column::TODO));
+    VectorClock vc(1);
+    ASSERT_TRUE(tm.move_task(0, Column::TODO, vc));
 
     Task task = tm.get_task(0);
     ASSERT_EQUAL(task.get_column(), Column::TODO);
@@ -225,7 +232,8 @@ TEST(test_task_manager_move_task_same_column)
 TEST(test_task_manager_move_nonexistent_task)
 {
     TaskManager tm;
-    ASSERT_FALSE(tm.move_task(999, Column::DONE));
+    VectorClock vc(1);
+    ASSERT_FALSE(tm.move_task(999, Column::DONE, vc));
 }
 
 TEST(test_task_manager_delete_task)
@@ -259,6 +267,7 @@ TEST(test_task_manager_delete_and_recreate)
 TEST(test_task_manager_workflow)
 {
     TaskManager tm;
+    VectorClock vc(1);
 
     // Create tasks
     tm.create_task("Design UI", 1);
@@ -268,15 +277,18 @@ TEST(test_task_manager_workflow)
     ASSERT_EQUAL(tm.get_task_count(), 3);
 
     // Move first task to IN_PROGRESS
-    tm.move_task(0, Column::IN_PROGRESS);
+    vc.increment();
+    tm.move_task(0, Column::IN_PROGRESS, vc);
     ASSERT_EQUAL(tm.get_task(0).get_column(), Column::IN_PROGRESS);
 
     // Update description of second task
-    tm.update_task(1, "Implement distributed backend");
+    vc.increment();
+    tm.update_task(1, "Implement distributed backend", vc);
     ASSERT_EQUAL(tm.get_task(1).get_description(), "Implement distributed backend");
 
     // Complete first task
-    tm.move_task(0, Column::DONE);
+    vc.increment();
+    tm.move_task(0, Column::DONE, vc);
     ASSERT_EQUAL(tm.get_task(0).get_column(), Column::DONE);
 
     // Delete third task

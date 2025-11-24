@@ -1,7 +1,10 @@
 #!/bin/bash
 
+# Tests master failover to backup
+
+echo "=========================================="
 echo "Quick Failover Test"
-echo "==================="
+echo "=========================================="
 echo ""
 echo "This will:"
 echo "1. Start backup + master + gateway"
@@ -11,13 +14,19 @@ echo "4. Show backup promotion"
 echo "5. Test creating task via backup"
 echo ""
 
+# Get script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+BACKEND_DIR="$PROJECT_ROOT/backend"
+GATEWAY_DIR="$PROJECT_ROOT/gateway"
+
 # Kill everything first
 pkill -9 master backup node 2>/dev/null
 sleep 1
 
 # Start backup
 echo "Starting backup..."
-cd /Users/achyutkatiyar/CS6650/FinalProject/backend
+cd "$BACKEND_DIR"
 ./backup 12346 1 127.0.0.1 12345 &
 sleep 2
 
@@ -29,7 +38,7 @@ sleep 2
 
 # Start gateway
 echo "Starting gateway..."
-cd /Users/achyutkatiyar/CS6650/FinalProject/gateway
+cd "$GATEWAY_DIR"
 node server.js &
 sleep 3
 
@@ -61,3 +70,4 @@ curl -X POST http://localhost:8080/api/tasks \
 echo ""
 echo ""
 echo "Check backup terminal for promotion messages!"
+echo "Test complete."

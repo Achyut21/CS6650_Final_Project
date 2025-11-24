@@ -11,9 +11,9 @@ int main() {
     
     ClientStub client;
     if (!client.Init("127.0.0.1", 12345)) {
-        std::cerr << "❌ Failed to connect to master\n";
-        std::cerr << "   Is master running? (./master 12345 0)\n";
-        std::cerr << "   Is port 12345 accessible?\n";
+        std::cerr << " Failed to connect to master\n";
+        std::cerr << " Is master running? (./master 12345 0)\n";
+        std::cerr << " Is port 12345 accessible?\n";
         return 1;
     }
     
@@ -36,9 +36,9 @@ int main() {
     bool success = client.ReceiveSuccess();
     
     if (success) {
-        std::cout << "✅ Task created successfully!\n";
+        std::cout << " Task created successfully!\n";
     } else {
-        std::cout << "❌ Task creation failed\n";
+        std::cout << " Task creation failed\n";
     }
     
     client.Close();
