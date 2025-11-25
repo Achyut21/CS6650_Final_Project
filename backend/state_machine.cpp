@@ -57,6 +57,11 @@ void StateMachine::replay_log(TaskManager& tm, const std::vector<LogEntry>& entr
             case OpType::GET_BOARD:
                 // GET_BOARD is not a state-changing operation, skip in replay
                 break;
+                
+            case OpType::HEARTBEAT_PING:
+            case OpType::HEARTBEAT_ACK:
+                // Heartbeat messages are not logged, skip
+                break;
         }
     }
 }

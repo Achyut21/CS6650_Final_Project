@@ -23,6 +23,10 @@ public:
     bool SendTask(const Task& task);
     bool SendLogEntry(const LogEntry& entry);
     
+    // Heartbeat operations
+    bool SendHeartbeat();
+    bool ReceiveHeartbeatAck();
+    
     // Receive responses
     Task ReceiveTask();
     bool ReceiveSuccess();

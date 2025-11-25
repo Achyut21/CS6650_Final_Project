@@ -105,6 +105,12 @@ void HandleClient(Socket* client_socket, int client_id) {
                 stub.SendTaskList(all_tasks);
                 continue; // Skip SendSuccess
             }
+            
+            case OpType::HEARTBEAT_PING:
+            case OpType::HEARTBEAT_ACK:
+                // Promoted backup shouldn't receive heartbeat messages
+                std::cerr << "Unexpected heartbeat in promoted backup\n";
+                break;
                 
             default:
                 break;
@@ -128,7 +134,32 @@ void HandleReplication(Socket* client_socket) {
     std::cout << "Primary connected for replication\n";
     
     while (true) {
-        // Receive log entry from primary
+        // First receive operation type
+        OpType op_type = stub.ReceiveOpType();
+        
+        if (static_cast<int>(op_type) == -1) {
+            std::cout << "ReceiveOpType failed - Primary disconnected" << std::endl;
+            std::cout << "PROMOTING TO MASTER" << std::endl;
+            is_promoted = true;
+            std::cout << "Backup promoted! Now accepting client connections on port " << backup_port << std::endl;
+            std::cout << "Total tasks replicated: " << task_manager.get_task_count() << std::endl;
+            std::cout << "State machine log size: " << state_machine.get_log_size() << std::endl;
+            std::cout.flush();
+            break;
+        }
+        
+        // Handle heartbeat separately
+        if (op_type == OpType::HEARTBEAT_PING) {
+            // Respond with HEARTBEAT_ACK
+            if (!stub.SendSuccess(true)) {  // Send ack (reusing SendSuccess)
+                std::cout << "Failed to send heartbeat ack - Primary disconnected\n";
+                break;
+            }
+            std::cout << "[HEARTBEAT] Received ping, sent ack\n";
+            continue; // Go to next iteration
+        }
+        
+        // For task operations, receive the log entry
         LogEntry entry = stub.ReceiveLogEntry();
         
         // Check for disconnect (entry_id == -1 indicates error)
@@ -173,6 +204,11 @@ void HandleReplication(Socket* client_socket) {
                 
             case OpType::GET_BOARD:
                 // GET_BOARD is not a state-changing operation, skip in replication
+                break;
+                
+            case OpType::HEARTBEAT_PING:
+            case OpType::HEARTBEAT_ACK:
+                // Heartbeat operations handled separately, not logged
                 break;
         }
         

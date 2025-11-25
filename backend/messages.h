@@ -10,7 +10,9 @@ enum class OpType
     UPDATE_TASK,
     MOVE_TASK,
     DELETE_TASK,
-    GET_BOARD
+    GET_BOARD,
+    HEARTBEAT_PING,
+    HEARTBEAT_ACK
 };
 
 // Response status for operations

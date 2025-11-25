@@ -1,12 +1,14 @@
 #include "replication.h"
 #include <iostream>
 
-ReplicationManager::ReplicationManager(int id) : factory_id(id) {
+ReplicationManager::ReplicationManager(int id) : factory_id(id), heartbeat_running(false) {
     // Suppress unused warning - factory_id reserved for future use
     (void)factory_id;
 }
 
 ReplicationManager::~ReplicationManager() {
+    stop_heartbeat();
+    
     std::cout << "Closing replication connections..." << std::endl;
     for (ClientStub* stub : backup_stubs) {
         if (stub) {
@@ -51,6 +53,13 @@ bool ReplicationManager::replicate_entry(const LogEntry& entry) {
         }
         
         try {
+            // Send operation type first (so backup can distinguish from heartbeat)
+            if (!backup_stubs[i]->SendOpType(entry.get_op_type())) {
+                std::cerr << "Failed to send optype to backup " << i << "\n";
+                backup_connected[i] = false;
+                continue;
+            }
+            
             // Send log entry to backup
             if (!backup_stubs[i]->SendLogEntry(entry)) {
                 std::cerr << "Failed to send to backup " << i << "\n";
@@ -79,4 +88,87 @@ bool ReplicationManager::has_backups() const {
         if (connected) return true;
     }
     return false;
+}
+
+// Send heartbeat to all backups (active probing)
+void ReplicationManager::send_heartbeat() {
+    for (size_t i = 0; i < backup_stubs.size(); i++) {
+        if (!backup_connected[i] || !backup_stubs[i]) {
+            continue;
+        }
+        
+        try {
+            // Send HEARTBEAT_PING
+            if (!backup_stubs[i]->SendHeartbeat()) {
+                std::cout << "[HEARTBEAT] Failed to send ping to backup " << i << " - disconnected\n";
+                backup_connected[i] = false;
+                continue;
+            }
+            
+            // Receive HEARTBEAT_ACK
+            if (!backup_stubs[i]->ReceiveHeartbeatAck()) {
+                std::cout << "[HEARTBEAT] No ack from backup " << i << " - disconnected\n";
+                backup_connected[i] = false;
+                continue;
+            }
+            
+            // Heartbeat successful
+        } catch (...) {
+            std::cout << "[HEARTBEAT] Exception for backup " << i << " - disconnected\n";
+            backup_connected[i] = false;
+        }
+    }
+    
+    // Log status
+    int connected_count = 0;
+    for (size_t i = 0; i < backup_connected.size(); i++) {
+        if (backup_connected[i]) {
+            connected_count++;
+        }
+    }
+    
+    if (connected_count > 0) {
+        std::cout << "[HEARTBEAT] " << connected_count << "/" 
+                  << backup_connected.size() << " backups alive\n";
+    } else if (backup_connected.size() > 0) {
+        std::cout << "[HEARTBEAT] WARNING: All backups disconnected!\n";
+    }
+}
+
+// Heartbeat worker thread - monitors every 5 seconds
+void ReplicationManager::heartbeat_worker() {
+    std::cout << "[HEARTBEAT] Monitoring started (interval: 5 seconds)\n";
+    
+    while (heartbeat_running) {
+        // Sleep for 5 seconds in small chunks to allow quick shutdown
+        for (int i = 0; i < 50 && heartbeat_running; i++) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        
+        if (!heartbeat_running) break;
+        
+        send_heartbeat();
+    }
+    
+    std::cout << "[HEARTBEAT] Monitoring stopped\n";
+}
+
+// Start heartbeat monitoring
+void ReplicationManager::start_heartbeat() {
+    if (!heartbeat_running) {
+        heartbeat_running = true;
+        heartbeat_thread = std::thread(&ReplicationManager::heartbeat_worker, this);
+        std::cout << "Heartbeat monitoring started\n";
+    }
+}
+
+// Stop heartbeat monitoring
+void ReplicationManager::stop_heartbeat() {
+    if (heartbeat_running) {
+        heartbeat_running = false;
+        if (heartbeat_thread.joinable()) {
+            heartbeat_thread.join();
+        }
+        std::cout << "Heartbeat monitoring stopped\n";
+    }
 }

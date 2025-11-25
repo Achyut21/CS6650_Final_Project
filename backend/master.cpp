@@ -241,6 +241,12 @@ void HandleClient(Socket* client_socket, int client_id) {
                 continue; // Skip the SendSuccess call
             }
             
+            case OpType::HEARTBEAT_PING:
+            case OpType::HEARTBEAT_ACK:
+                // Master shouldn't receive these, but handle gracefully
+                std::cerr << "Unexpected heartbeat message received\n";
+                break;
+            
             default:
                 std::cerr << "Unknown operation type\n";
                 break;
@@ -278,6 +284,9 @@ int main(int argc, char* argv[]) {
         
         replication_manager = new ReplicationManager(node_id);
         replication_manager->add_backup(backup_ip, backup_port);
+        
+        // Start heartbeat monitoring (5 second interval)
+        replication_manager->start_heartbeat();
     } else {
         std::cout << "Running without replication (no backup specified)\n";
     }

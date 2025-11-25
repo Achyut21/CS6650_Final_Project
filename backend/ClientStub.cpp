@@ -95,3 +95,19 @@ void ClientStub::Close() {
     }
 }
 
+
+bool ClientStub::SendHeartbeat() {
+    // Send HEARTBEAT_PING opcode
+    int op_type_int = static_cast<int>(OpType::HEARTBEAT_PING);
+    int net_op_type = htonl(op_type_int);
+    return socket->Send(&net_op_type, sizeof(int));
+}
+
+bool ClientStub::ReceiveHeartbeatAck() {
+    // Receive simple success response (1 = ack received)
+    int result;
+    if (!socket->Receive(&result, sizeof(int))) {
+        return false;
+    }
+    return ntohl(result) == 1;
+}
