@@ -7,9 +7,9 @@ const cors = require('cors');
 
 // Configuration
 const PORT = 8080;
-const MASTER_HOST = 'localhost';
+const MASTER_HOST = '127.0.0.1';  // Use IPv4 explicitly instead of 'localhost'
 const MASTER_PORT = 12345;
-const BACKUP_HOST = 'localhost';
+const BACKUP_HOST = '127.0.0.1';  // Use IPv4 explicitly instead of 'localhost'
 const BACKUP_PORT = 12346;
 
 // Simple task ID counter

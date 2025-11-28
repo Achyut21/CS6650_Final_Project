@@ -1,6 +1,7 @@
 #ifndef SERVER_STUB_H
 #define SERVER_STUB_H
 
+#include <vector>
 #include "Socket.h"
 #include "messages.h"
 
