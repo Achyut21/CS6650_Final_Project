@@ -2,17 +2,15 @@
 #include <cstring>
 #include <arpa/inet.h>
 
-// Helper for 64-bit network byte order (not standard on all platforms)
 #ifndef htonll
 static inline uint64_t htonll(uint64_t value) {
     static const int num = 1;
     if (*(char *)&num == 1) {
-        // Little endian - need to swap
         uint32_t high = htonl((uint32_t)(value >> 32));
         uint32_t low = htonl((uint32_t)(value & 0xFFFFFFFFULL));
         return ((uint64_t)low << 32) | high;
     }
-    return value; // Big endian - no swap
+    return value;
 }
 #endif
 
