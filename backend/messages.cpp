@@ -1,6 +1,7 @@
 #include "messages.h"
 #include <cstring>
 #include <arpa/inet.h>
+#include <chrono>
 
 #ifndef htonll
 static inline uint64_t htonll(uint64_t value) {
@@ -49,6 +50,12 @@ int VectorClock::get(int id) const
 {
     auto it = clock.find(id);
     return (it != clock.end()) ? it->second : 0;
+}
+
+// Set clock value for specific process (used during unmarshalling)
+void VectorClock::set(int id, int value)
+{
+    clock[id] = value;
 }
 
 // Compare two vector clocks
@@ -113,10 +120,14 @@ Task::Task(int task_id, std::string title, std::string description,
       created_by(created_by),
       column(column),
       client_id(client_id),
-      created_at(0),  // Set by caller if needed
-      updated_at(0),  // Set by caller if needed
       vclock(client_id)
 {
+    // Set timestamps to current time
+    long long now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()
+    ).count();
+    created_at = now;
+    updated_at = now;
 }
 
 int Task::get_task_id() const
@@ -210,10 +221,15 @@ void Task::set_updated_at(long long timestamp)
 }
 
 // Task marshalling: task_id + description_len + description + column + client_id + vclock_size + vclock_data
+// Task marshalling with all fields
 int Task::Size() const
 {
     int size = sizeof(int) * 3; // task_id, column, client_id
+    size += sizeof(long long) * 2; // created_at, updated_at (8 bytes each)
+    size += sizeof(int) + title.length(); // title_len + title
     size += sizeof(int) + description.length(); // description_len + description
+    size += sizeof(int) + board_id.length(); // board_id_len + board_id
+    size += sizeof(int) + created_by.length(); // created_by_len + created_by
     size += sizeof(int); // vclock_size
     size += vclock.get_clock().size() * sizeof(int) * 2; // each entry: process_id + count
     return size;
@@ -363,24 +379,25 @@ void Task::Unmarshal(const char *buffer)
     updated_at = ntohll(net_updated_at);
     offset += sizeof(long long);
     
-    // vector clock - reconstruct
+    // vector clock - reconstruct using set() method
     int net_clock_size;
     memcpy(&net_clock_size, buffer + offset, sizeof(int));
     int clock_size = ntohl(net_clock_size);
     offset += sizeof(int);
     
-    // Note: We can't directly modify vclock's internal map, so we update it
     for (int i = 0; i < clock_size; i++) {
         int net_pid, net_count;
         memcpy(&net_pid, buffer + offset, sizeof(int));
+        int pid = ntohl(net_pid);
         offset += sizeof(int);
         memcpy(&net_count, buffer + offset, sizeof(int));
+        int count = ntohl(net_count);
         offset += sizeof(int);
-        // The vclock will be updated through operations
+        vclock.set(pid, count);  // Actually restore the vector clock entry
     }
 }
 
-LogEntry::LogEntry(int id, OpType type, VectorClock vc, int tid, std::string desc, Column col, int cid) : entry_id(id), op_type(type), timestamp(vc), task_id(tid), description(desc), column(col), client_id(cid)
+LogEntry::LogEntry(int id, OpType type, VectorClock vc, int tid, std::string title, std::string desc, std::string created_by, Column col, int cid) : entry_id(id), op_type(type), timestamp(vc), task_id(tid), title(title), description(desc), created_by(created_by), column(col), client_id(cid)
 {
 }
 
@@ -404,9 +421,19 @@ int LogEntry::get_task_id() const
     return task_id;
 }
 
+std::string LogEntry::get_title() const
+{
+    return title;
+}
+
 std::string LogEntry::get_description() const
 {
     return description;
+}
+
+std::string LogEntry::get_created_by() const
+{
+    return created_by;
 }
 
 Column LogEntry::get_column() const
@@ -423,7 +450,9 @@ int LogEntry::get_client_id() const
 int LogEntry::Size() const
 {
     int size = sizeof(int) * 4; // entry_id, op_type, task_id, client_id
+    size += sizeof(int) + title.length(); // title_len + title
     size += sizeof(int) + description.length(); // description_len + description
+    size += sizeof(int) + created_by.length(); // created_by_len + created_by
     size += sizeof(int); // column
     size += sizeof(int); // vclock_size
     size += timestamp.get_clock().size() * sizeof(int) * 2; // vclock data
@@ -449,6 +478,14 @@ void LogEntry::Marshal(char *buffer) const
     memcpy(buffer + offset, &net_task_id, sizeof(int));
     offset += sizeof(int);
     
+    // title
+    int title_len = title.length();
+    int net_title_len = htonl(title_len);
+    memcpy(buffer + offset, &net_title_len, sizeof(int));
+    offset += sizeof(int);
+    memcpy(buffer + offset, title.c_str(), title_len);
+    offset += title_len;
+    
     // description
     int desc_len = description.length();
     int net_desc_len = htonl(desc_len);
@@ -456,6 +493,14 @@ void LogEntry::Marshal(char *buffer) const
     offset += sizeof(int);
     memcpy(buffer + offset, description.c_str(), desc_len);
     offset += desc_len;
+    
+    // created_by
+    int created_by_len = created_by.length();
+    int net_created_by_len = htonl(created_by_len);
+    memcpy(buffer + offset, &net_created_by_len, sizeof(int));
+    offset += sizeof(int);
+    memcpy(buffer + offset, created_by.c_str(), created_by_len);
+    offset += created_by_len;
     
     // column
     int net_column = htonl(static_cast<int>(column));
@@ -506,6 +551,14 @@ void LogEntry::Unmarshal(const char *buffer)
     task_id = ntohl(net_task_id);
     offset += sizeof(int);
     
+    // title
+    int net_title_len;
+    memcpy(&net_title_len, buffer + offset, sizeof(int));
+    int title_len = ntohl(net_title_len);
+    offset += sizeof(int);
+    title.assign(buffer + offset, title_len);
+    offset += title_len;
+    
     // description
     int net_desc_len;
     memcpy(&net_desc_len, buffer + offset, sizeof(int));
@@ -513,6 +566,14 @@ void LogEntry::Unmarshal(const char *buffer)
     offset += sizeof(int);
     description.assign(buffer + offset, desc_len);
     offset += desc_len;
+    
+    // created_by
+    int net_created_by_len;
+    memcpy(&net_created_by_len, buffer + offset, sizeof(int));
+    int created_by_len = ntohl(net_created_by_len);
+    offset += sizeof(int);
+    created_by.assign(buffer + offset, created_by_len);
+    offset += created_by_len;
     
     // column
     int net_column;

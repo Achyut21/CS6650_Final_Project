@@ -26,7 +26,8 @@ int main() {
         return 1;
     }
     
-    Task task(0, "Test Task from Client", Column::TODO, 1);
+    // Task(task_id, title, description, board_id, created_by, column, client_id)
+    Task task(0, "Test Task", "Test Task from Client", "board-1", "test_user", Column::TODO, 1);
     if (!client.SendTask(task)) {
         std::cerr << "Failed to send task\n";
         return 1;

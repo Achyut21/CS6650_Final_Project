@@ -6,14 +6,14 @@ const path = require('path');
 const cors = require('cors');
 
 // Configuration
+// Usage: node server.js [master_machine] [backup_machine]
+// Local:  node server.js
+// Khoury: node server.js 81 82
 const PORT = 8080;
-const MASTER_HOST = '127.0.0.1';  // Use IPv4 explicitly instead of 'localhost'
+const MASTER_HOST = process.argv[2] ? `10.200.125.${parseInt(process.argv[2])}` : '127.0.0.1';
 const MASTER_PORT = 12345;
-const BACKUP_HOST = '127.0.0.1';  // Use IPv4 explicitly instead of 'localhost'
+const BACKUP_HOST = process.argv[3] ? `10.200.125.${parseInt(process.argv[3])}` : '127.0.0.1';
 const BACKUP_PORT = 12346;
-
-// Simple task ID counter
-let nextTaskId = 0;
 
 // Failover state
 let currentBackendHost = MASTER_HOST;
@@ -280,15 +280,18 @@ function deserializeTask(buffer, offset = 0) {
   };
 }
 
-// Get all tasks from backend
-async function getBoardFromBackend() {
+// Get all tasks from backend (with failover support)
+async function getBoardFromBackend(retryWithBackup = true) {
   return new Promise((resolve, reject) => {
     const client = new net.Socket();
     let responseData = Buffer.alloc(0);
     
-    client.connect(currentBackendPort, currentBackendHost, () => {
+    const host = currentBackendHost;
+    const port = currentBackendPort;
+    
+    client.connect(port, host, () => {
       try {
-        console.log('[GET_BOARD] Requesting all tasks from backend...');
+        console.log('[GET_BOARD] Requesting all tasks from backend at', host + ':' + port);
         
         // Send GET_BOARD operation type
         const opBuffer = Buffer.alloc(4);
@@ -346,12 +349,39 @@ async function getBoardFromBackend() {
     
     client.on('error', (err) => {
       console.error('[GET_BOARD] Socket error:', err.message);
-      reject(err);
+      
+      // If master fails and we haven't failed over yet, try backup
+      if (!failedOverToBackup && retryWithBackup && host === MASTER_HOST) {
+        console.log('[GET_BOARD FAILOVER] Master failed, switching to backup...');
+        currentBackendHost = BACKUP_HOST;
+        currentBackendPort = BACKUP_PORT;
+        failedOverToBackup = true;
+        
+        // Retry with backup
+        getBoardFromBackend(false)
+          .then(resolve)
+          .catch(reject);
+      } else {
+        reject(err);
+      }
     });
     
     client.setTimeout(5000, () => {
       client.destroy();
-      reject(new Error('GET_BOARD timeout'));
+      
+      // Also try failover on timeout
+      if (!failedOverToBackup && retryWithBackup) {
+        console.log('[GET_BOARD FAILOVER] Timeout, switching to backup...');
+        currentBackendHost = BACKUP_HOST;
+        currentBackendPort = BACKUP_PORT;
+        failedOverToBackup = true;
+        
+        getBoardFromBackend(false)
+          .then(resolve)
+          .catch(reject);
+      } else {
+        reject(new Error('GET_BOARD timeout'));
+      }
     });
   });
 }
@@ -390,8 +420,8 @@ app.post('/api/tasks', async (req, res) => {
     const result = await sendToBackend(OpType.CREATE_TASK, taskData);
     
     if (result.success) {
-      // Broadcast to all connected clients
-      const taskId = nextTaskId++;
+      // Use task ID from backend response
+      const taskId = result.taskId;
       const createdTask = {
         task_id: taskId,
         board_id: board_id || 'board-1',
@@ -543,5 +573,6 @@ app.get('*', (req, res) => {
 server.listen(PORT, () => {
   console.log(`API Gateway listening on port ${PORT}`);
   console.log(`Master backend: ${MASTER_HOST}:${MASTER_PORT}`);
+  console.log(`Backup backend: ${BACKUP_HOST}:${BACKUP_PORT}`);
   console.log(`WebSocket server ready`);
 });

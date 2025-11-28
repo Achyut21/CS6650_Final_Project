@@ -26,7 +26,7 @@ BACKUP_SOURCES = backup.cpp
 BACKUP_OBJECTS = $(BACKUP_SOURCES:.cpp=.o)
 BACKUP_EXEC = backup
 
-.PHONY: all clean test test_sm master backup
+.PHONY: all clean test test_sm build_master build_backup
 
 # Default target: build all
 all: $(TEST_EXEC) $(SM_TEST_EXEC) $(MASTER_EXEC) $(BACKUP_EXEC)
@@ -60,10 +60,10 @@ test_sm: $(SM_TEST_EXEC)
 	./$(SM_TEST_EXEC)
 
 # Build master only
-master: $(MASTER_EXEC)
+build_master: $(MASTER_EXEC)
 
 # Build backup only
-backup: $(BACKUP_EXEC)
+build_backup: $(BACKUP_EXEC)
 
 # Clean build artifacts
 clean:

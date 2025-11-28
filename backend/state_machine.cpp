@@ -38,8 +38,9 @@ void StateMachine::replay_log(TaskManager& tm, const std::vector<LogEntry>& entr
         
         switch (op) {
             case OpType::CREATE_TASK:
-                // Use backward compatible version during replay
-                tm.create_task(entry.get_description(), entry.get_client_id());
+                // Use full create_task with all fields from log entry
+                tm.create_task(entry.get_title(), entry.get_description(), "board-1", entry.get_created_by(),
+                              entry.get_column(), entry.get_client_id());
                 break;
                 
             case OpType::UPDATE_TASK:

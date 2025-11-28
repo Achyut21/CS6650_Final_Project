@@ -10,20 +10,15 @@ TaskManager::TaskManager()
     id_counter = 0;
 }
 
-// Create a task with all fields, including timestamps
+// Create a task with all fields, including column and timestamps
 bool TaskManager::create_task(std::string title, std::string description, 
-                               std::string board_id, std::string created_by, int client_id)
+                               std::string board_id, std::string created_by, 
+                               Column column, int client_id)
 {
     std::lock_guard<std::mutex> lock(task_lock);
     
-    // Get current timestamp (milliseconds since epoch)
-    long long now = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()
-    ).count();
-    
-    // Create task with all fields
-    Task new_task(id_counter, title, description, board_id, created_by, Column::TODO, client_id);
-    new_task.set_updated_at(now);
+    // Create task with specified column
+    Task new_task(id_counter, title, description, board_id, created_by, column, client_id);
     
     tasks.emplace(id_counter, new_task);
     clocks.push_back(&tasks[id_counter].get_clock());
@@ -125,13 +120,14 @@ bool TaskManager::delete_task(int task_id)
         return false;
     }
 
+    // Find and remove from clocks vector BEFORE erasing task to avoid dangling pointer
     VectorClock *clock_to_remove = &task_it->second.get_clock();
-    tasks.erase(task_it);
     auto it = std::find(clocks.begin(), clocks.end(), clock_to_remove);
     if (it != clocks.end())
     {
         clocks.erase(it);
     }
+    tasks.erase(task_it);
 
     return true;
 }
@@ -273,5 +269,5 @@ OperationResponse TaskManager::move_task_with_conflict_detection(int task_id, Co
 // Backward compatible create_task for tests
 bool TaskManager::create_task(std::string description, int client_id)
 {
-    return create_task("Task", description, "board-1", "user", client_id);
+    return create_task("Task", description, "board-1", "user", Column::TODO, client_id);
 }

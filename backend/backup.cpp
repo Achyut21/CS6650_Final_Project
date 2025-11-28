@@ -13,8 +13,7 @@ TaskManager task_manager;
 StateMachine state_machine;
 bool server_running = true;
 bool is_promoted = false;
-std::string backup_ip = "127.0.0.1";
-int backup_port = 12346;
+int backup_port = 12346;  // Updated from argv in main()
 Socket* global_server_socket = nullptr;
 std::map<int, VectorClock> client_clocks;  // Track vector clock per client after promotion
 std::mutex clock_mutex;
@@ -47,6 +46,7 @@ void HandleClient(Socket* client_socket, int client_id) {
         
         Task task = stub.ReceiveTask();
         bool success = false;
+        OperationResponse op_response;
         
         switch (op_type) {
             case OpType::CREATE_TASK:
@@ -55,10 +55,20 @@ void HandleClient(Socket* client_socket, int client_id) {
                     task.get_description(),
                     task.get_board_id(),
                     task.get_created_by(),
+                    task.get_column(),
                     task.get_client_id()
                 );
-                if (success) std::cout << "Created task (promoted backup)\n";
-                break;
+                
+                // Send OperationResponse with task ID
+                op_response.success = success;
+                op_response.conflict = false;
+                op_response.rejected = false;
+                op_response.updated_task_id = success ? (int)(task_manager.get_task_count() - 1) : -1;
+                
+                if (success) std::cout << "Created task " << op_response.updated_task_id << " (promoted backup)\n";
+                
+                stub.SendOperationResponse(op_response);
+                continue; // Skip default SendSuccess
                 
             case OpType::UPDATE_TASK:
                 {
@@ -72,10 +82,13 @@ void HandleClient(Socket* client_socket, int client_id) {
                     } else {
                         client_clocks.insert({client_id, vc});
                     }
-                    success = task_manager.update_task(task.get_task_id(), task.get_description(), vc);
+                    op_response = task_manager.update_task_with_conflict_detection(
+                        task.get_task_id(), task.get_description(), vc);
                 }
-                if (success) std::cout << "Updated task " << task.get_task_id() << "\n";
-                break;
+                if (op_response.success) std::cout << "Updated task " << task.get_task_id() << "\n";
+                
+                stub.SendOperationResponse(op_response);
+                continue; // Skip default SendSuccess
                 
             case OpType::MOVE_TASK:
                 {
@@ -89,10 +102,13 @@ void HandleClient(Socket* client_socket, int client_id) {
                     } else {
                         client_clocks.insert({client_id, vc});
                     }
-                    success = task_manager.move_task(task.get_task_id(), task.get_column(), vc);
+                    op_response = task_manager.move_task_with_conflict_detection(
+                        task.get_task_id(), task.get_column(), vc);
                 }
-                if (success) std::cout << "Moved task " << task.get_task_id() << "\n";
-                break;
+                if (op_response.success) std::cout << "Moved task " << task.get_task_id() << "\n";
+                
+                stub.SendOperationResponse(op_response);
+                continue; // Skip default SendSuccess
                 
             case OpType::DELETE_TASK:
                 success = task_manager.delete_task(task.get_task_id());
@@ -183,8 +199,16 @@ void HandleReplication(Socket* client_socket) {
         
         switch (op) {
             case OpType::CREATE_TASK:
-                task_manager.create_task(entry.get_description(), entry.get_client_id());
-                std::cout << "Replicated CREATE_TASK\n";
+                // Debug: Log the column value from the entry
+                std::cout << "[DEBUG] CREATE_TASK replication - title: " << entry.get_title()
+                          << ", created_by: " << entry.get_created_by()
+                          << ", column: " << static_cast<int>(entry.get_column()) << "\n";
+                // Use full create_task with all fields from log entry
+                task_manager.create_task(entry.get_title(), entry.get_description(), "board-1", entry.get_created_by(),
+                                        entry.get_column(), entry.get_client_id());
+                std::cout << "Replicated CREATE_TASK (title: " << entry.get_title() 
+                          << ", created_by: " << entry.get_created_by()
+                          << ", column: " << static_cast<int>(entry.get_column()) << ")\n";
                 break;
                 
             case OpType::UPDATE_TASK:
@@ -237,6 +261,7 @@ int main(int argc, char* argv[]) {
     }
     
     int port = std::stoi(argv[1]);
+    backup_port = port;  // Sync global for promotion messages
     int node_id = std::stoi(argv[2]);
     std::string primary_ip = argv[3];
     int primary_port = std::stoi(argv[4]);

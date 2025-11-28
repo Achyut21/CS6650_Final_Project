@@ -10,7 +10,8 @@ void test_append_to_log() {
     StateMachine sm;
     VectorClock vc(0);
     
-    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", Column::TODO, 1);
+    // LogEntry(entry_id, op_type, vc, task_id, title, description, created_by, column, client_id)
+    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", "Desc 1", "user", Column::TODO, 1);
     sm.append_to_log(entry1);
     
     assert(sm.get_log_size() == 1);
@@ -24,8 +25,8 @@ void test_get_log() {
     StateMachine sm;
     VectorClock vc(0);
     
-    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", Column::TODO, 1);
-    LogEntry entry2(1, OpType::CREATE_TASK, vc, 1, "Task 2", Column::TODO, 1);
+    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", "Desc 1", "user", Column::TODO, 1);
+    LogEntry entry2(1, OpType::CREATE_TASK, vc, 1, "Task 2", "Desc 2", "user", Column::TODO, 1);
     
     sm.append_to_log(entry1);
     sm.append_to_log(entry2);
@@ -42,9 +43,9 @@ void test_get_log_after() {
     StateMachine sm;
     VectorClock vc(0);
     
-    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", Column::TODO, 1);
-    LogEntry entry2(1, OpType::CREATE_TASK, vc, 1, "Task 2", Column::TODO, 1);
-    LogEntry entry3(2, OpType::CREATE_TASK, vc, 2, "Task 3", Column::TODO, 1);
+    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", "Desc 1", "user", Column::TODO, 1);
+    LogEntry entry2(1, OpType::CREATE_TASK, vc, 1, "Task 2", "Desc 2", "user", Column::TODO, 1);
+    LogEntry entry3(2, OpType::CREATE_TASK, vc, 2, "Task 3", "Desc 3", "user", Column::TODO, 1);
     
     sm.append_to_log(entry1);
     sm.append_to_log(entry2);
@@ -66,8 +67,8 @@ void test_replay_log_create() {
     TaskManager tm;
     VectorClock vc(0);
     
-    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", Column::TODO, 1);
-    LogEntry entry2(1, OpType::CREATE_TASK, vc, 1, "Task 2", Column::TODO, 1);
+    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", "Desc 1", "user", Column::TODO, 1);
+    LogEntry entry2(1, OpType::CREATE_TASK, vc, 1, "Task 2", "Desc 2", "user", Column::TODO, 1);
     
     sm.append_to_log(entry1);
     sm.append_to_log(entry2);
@@ -88,11 +89,11 @@ void test_replay_log_update() {
     VectorClock vc(0);
     
     // Create task
-    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Original", Column::TODO, 1);
+    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task", "Original", "user", Column::TODO, 1);
     sm.append_to_log(entry1);
     
-    // Update task
-    LogEntry entry2(1, OpType::UPDATE_TASK, vc, 0, "Updated", Column::TODO, 1);
+    // Update task (title and created_by not used for UPDATE, but still need to provide)
+    LogEntry entry2(1, OpType::UPDATE_TASK, vc, 0, "", "Updated", "", Column::TODO, 1);
     sm.append_to_log(entry2);
     
     std::vector<LogEntry> log = sm.get_log();
@@ -112,11 +113,11 @@ void test_replay_log_move() {
     VectorClock vc(0);
     
     // Create task
-    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", Column::TODO, 1);
+    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", "Desc", "user", Column::TODO, 1);
     sm.append_to_log(entry1);
     
-    // Move task
-    LogEntry entry2(1, OpType::MOVE_TASK, vc, 0, "", Column::IN_PROGRESS, 1);
+    // Move task (title, description, created_by not used for MOVE)
+    LogEntry entry2(1, OpType::MOVE_TASK, vc, 0, "", "", "", Column::IN_PROGRESS, 1);
     sm.append_to_log(entry2);
     
     std::vector<LogEntry> log = sm.get_log();
@@ -136,13 +137,13 @@ void test_replay_log_delete() {
     VectorClock vc(0);
     
     // Create two tasks
-    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", Column::TODO, 1);
-    LogEntry entry2(1, OpType::CREATE_TASK, vc, 1, "Task 2", Column::TODO, 1);
+    LogEntry entry1(0, OpType::CREATE_TASK, vc, 0, "Task 1", "Desc 1", "user", Column::TODO, 1);
+    LogEntry entry2(1, OpType::CREATE_TASK, vc, 1, "Task 2", "Desc 2", "user", Column::TODO, 1);
     sm.append_to_log(entry1);
     sm.append_to_log(entry2);
     
-    // Delete first task
-    LogEntry entry3(2, OpType::DELETE_TASK, vc, 0, "", Column::TODO, 1);
+    // Delete first task (title, description, created_by not used for DELETE)
+    LogEntry entry3(2, OpType::DELETE_TASK, vc, 0, "", "", "", Column::TODO, 1);
     sm.append_to_log(entry3);
     
     std::vector<LogEntry> log = sm.get_log();
@@ -160,7 +161,7 @@ void test_log_100_operations() {
     VectorClock vc(0);
     
     for (int i = 0; i < 100; i++) {
-        LogEntry entry(i, OpType::CREATE_TASK, vc, i, "Task", Column::TODO, 1);
+        LogEntry entry(i, OpType::CREATE_TASK, vc, i, "Task", "Desc", "user", Column::TODO, 1);
         sm.append_to_log(entry);
     }
     
@@ -179,7 +180,7 @@ void test_replay_reconstructs_state() {
     // Create 5 tasks in tm1
     for (int i = 0; i < 5; i++) {
         tm1.create_task("Task " + std::to_string(i), 1);
-        LogEntry entry(i, OpType::CREATE_TASK, vc, i, "Task " + std::to_string(i), Column::TODO, 1);
+        LogEntry entry(i, OpType::CREATE_TASK, vc, i, "Task " + std::to_string(i), "Desc", "user", Column::TODO, 1);
         sm.append_to_log(entry);
     }
     

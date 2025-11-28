@@ -74,14 +74,27 @@ void HandleClient(Socket* client_socket, int client_id) {
                     task.get_description(),
                     task.get_board_id(),
                     task.get_created_by(),
+                    task.get_column(),
                     task.get_client_id()
                 );
                 
+                // Prepare response with created task ID
+                op_response.success = success;
+                op_response.conflict = false;
+                op_response.rejected = false;
+                op_response.updated_task_id = success ? (int)(task_manager.get_task_count() - 1) : -1;
+                
                 if (success) {
-                    // Create log entry with proper vector clock
+                    // Debug: Log the column being replicated
+                    std::cout << "[DEBUG] CREATE_TASK - column from task: " 
+                              << static_cast<int>(task.get_column()) << "\n";
+                    
+                    // Create log entry with proper vector clock and title
                     LogEntry entry(next_entry_id++, op_type, vc, 
-                                 task_manager.get_task_count() - 1,
-                                 task.get_description(), 
+                                 op_response.updated_task_id,
+                                 task.get_title(),
+                                 task.get_description(),
+                                 task.get_created_by(),
                                  task.get_column(), 
                                  task.get_client_id());
                     
@@ -91,9 +104,12 @@ void HandleClient(Socket* client_socket, int client_id) {
                         replication_manager->replicate_entry(entry);
                     }
                     
-                    std::cout << "Created task for client " << client_id << "\n";
+                    std::cout << "Created task " << op_response.updated_task_id << " for client " << client_id << "\n";
                 }
-                break;
+                
+                // Send response with task ID
+                stub.SendOperationResponse(op_response);
+                continue; // Skip the default SendSuccess
             }
             
             case OpType::UPDATE_TASK: {
@@ -122,7 +138,9 @@ void HandleClient(Socket* client_socket, int client_id) {
                 if (success && !op_response.rejected) {
                     LogEntry entry(next_entry_id++, op_type, vc,
                                  task.get_task_id(),
+                                 "",  // No title change for updates
                                  task.get_description(),
+                                 "",  // No created_by for updates
                                  Column::TODO,
                                  task.get_client_id());
                     
@@ -170,7 +188,9 @@ void HandleClient(Socket* client_socket, int client_id) {
                 if (success && !op_response.rejected) {
                     LogEntry entry(next_entry_id++, op_type, vc,
                                  task.get_task_id(),
+                                 "",  // No title for moves
                                  "",
+                                 "",  // No created_by for moves
                                  task.get_column(),
                                  task.get_client_id());
                     
@@ -215,7 +235,9 @@ void HandleClient(Socket* client_socket, int client_id) {
                 if (success) {
                     LogEntry entry(next_entry_id++, op_type, vc,
                                  task.get_task_id(),
+                                 "",  // No title for deletes
                                  "",
+                                 "",  // No created_by for deletes
                                  Column::TODO,
                                  task.get_client_id());
                     

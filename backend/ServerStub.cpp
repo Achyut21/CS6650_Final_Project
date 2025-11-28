@@ -45,7 +45,7 @@ Task ServerStub::ReceiveTask() {
 
 LogEntry ServerStub::ReceiveLogEntry() {
     // Error entry with -1 id to indicate failure
-    LogEntry entry(-1, OpType::CREATE_TASK, VectorClock(0), -1, "", Column::TODO, 0);
+    LogEntry entry(-1, OpType::CREATE_TASK, VectorClock(0), -1, "", "", "", Column::TODO, 0);
     
     // First receive size
     int size;

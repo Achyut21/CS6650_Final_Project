@@ -16,9 +16,9 @@ private:
 
 public:
     TaskManager();
-    // New signature with all fields
+    // New signature with all fields including column
     bool create_task(std::string title, std::string description, std::string board_id, 
-                     std::string created_by, int client_id);
+                     std::string created_by, Column column, int client_id);
     // Backward compatible signature for tests
     bool create_task(std::string description, int client_id);
     
