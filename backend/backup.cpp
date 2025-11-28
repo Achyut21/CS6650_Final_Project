@@ -14,9 +14,11 @@ StateMachine state_machine;
 bool server_running = true;
 bool is_promoted = false;
 int backup_port = 12346;  // Updated from argv in main()
+int next_entry_id = 0;    // Track next entry ID for log
 Socket* global_server_socket = nullptr;
 std::map<int, VectorClock> client_clocks;  // Track vector clock per client after promotion
 std::mutex clock_mutex;
+std::mutex promotion_mutex;  // Protect is_promoted flag
 
 void SignalHandler(int) {
     std::cout << "\nShutting down backup...\n";
@@ -59,11 +61,11 @@ void HandleClient(Socket* client_socket, int client_id) {
                     task.get_client_id()
                 );
                 
-                // Send OperationResponse with task ID
+                // Send OperationResponse with task ID (use id_counter, not task_count)
                 op_response.success = success;
                 op_response.conflict = false;
                 op_response.rejected = false;
-                op_response.updated_task_id = success ? (int)(task_manager.get_task_count() - 1) : -1;
+                op_response.updated_task_id = success ? (task_manager.get_id_counter() - 1) : -1;
                 
                 if (success) std::cout << "Created task " << op_response.updated_task_id << " (promoted backup)\n";
                 
@@ -124,8 +126,13 @@ void HandleClient(Socket* client_socket, int client_id) {
             
             case OpType::HEARTBEAT_PING:
             case OpType::HEARTBEAT_ACK:
-                // Promoted backup shouldn't receive heartbeat messages
-                std::cerr << "Unexpected heartbeat in promoted backup\n";
+            case OpType::MASTER_REJOIN:
+            case OpType::STATE_TRANSFER_REQUEST:
+            case OpType::STATE_TRANSFER_RESPONSE:
+            case OpType::DEMOTE_ACK:
+            case OpType::REPLICATION_INIT:
+                // These shouldn't come through HandleClient
+                std::cerr << "Unexpected control message in HandleClient\n";
                 break;
                 
             default:
@@ -139,6 +146,55 @@ void HandleClient(Socket* client_socket, int client_id) {
     delete client_socket;
 }
 
+// Handle master rejoin - send state and demote
+bool HandleMasterRejoin(Socket* client_socket) {
+    ServerStub stub;
+    if (!stub.Init(client_socket)) {
+        delete client_socket;
+        return false;
+    }
+    
+    std::cout << "[MASTER REJOIN] Master is rejoining\n";
+    
+    // Get current state
+    std::vector<Task> tasks = task_manager.get_all_tasks();
+    std::vector<LogEntry> log = state_machine.get_log();
+    int id_counter = task_manager.get_id_counter();
+    
+    std::cout << "[STATE TRANSFER] Sending to master: " << tasks.size() << " tasks, "
+              << log.size() << " log entries, ID counter: " << id_counter << "\n";
+    
+    // Send state transfer
+    if (!stub.SendStateTransfer(tasks, log, id_counter)) {
+        std::cerr << "[STATE TRANSFER] Failed to send state to master\n";
+        delete client_socket;
+        return false;
+    }
+    
+    std::cout << "[STATE TRANSFER] State sent successfully\n";
+    
+    // Wait for DEMOTE_ACK from master
+    OpType ack = stub.ReceiveOpType();
+    if (ack != OpType::DEMOTE_ACK) {
+        std::cerr << "[STATE TRANSFER] Did not receive DEMOTE_ACK, got: " << static_cast<int>(ack) << "\n";
+        delete client_socket;
+        return false;
+    }
+    
+    std::cout << "[DEMOTE] Received DEMOTE_ACK from master\n";
+    
+    // Demote back to backup mode
+    {
+        std::lock_guard<std::mutex> lock(promotion_mutex);
+        is_promoted = false;
+    }
+    
+    std::cout << "[DEMOTE] Backup demoted, returning to backup mode\n";
+    
+    delete client_socket;
+    return true;
+}
+
 // Handle replication from primary
 void HandleReplication(Socket* client_socket) {
     ServerStub stub;
@@ -149,14 +205,31 @@ void HandleReplication(Socket* client_socket) {
     
     std::cout << "Primary connected for replication\n";
     
+    // First message should be REPLICATION_INIT handshake
+    OpType first_op = stub.ReceiveOpType();
+    if (first_op != OpType::REPLICATION_INIT) {
+        std::cout << "[BACKUP MODE] Expected REPLICATION_INIT but got optype " 
+                  << static_cast<int>(first_op) << " - rejecting connection\n";
+        stub.SendSuccess(false);
+        delete client_socket;
+        return;
+    }
+    
+    // Acknowledge the handshake
+    std::cout << "[BACKUP MODE] Received REPLICATION_INIT - acknowledged\n";
+    stub.SendSuccess(true);
+    
     while (true) {
-        // First receive operation type
+        // Receive operation type
         OpType op_type = stub.ReceiveOpType();
         
         if (static_cast<int>(op_type) == -1) {
             std::cout << "ReceiveOpType failed - Primary disconnected" << std::endl;
             std::cout << "PROMOTING TO MASTER" << std::endl;
-            is_promoted = true;
+            {
+                std::lock_guard<std::mutex> lock(promotion_mutex);
+                is_promoted = true;
+            }
             std::cout << "Backup promoted! Now accepting client connections on port " << backup_port << std::endl;
             std::cout << "Total tasks replicated: " << task_manager.get_task_count() << std::endl;
             std::cout << "State machine log size: " << state_machine.get_log_size() << std::endl;
@@ -175,14 +248,29 @@ void HandleReplication(Socket* client_socket) {
             continue; // Go to next iteration
         }
         
-        // For task operations, receive the log entry
+        // Handle unexpected MASTER_REJOIN when we're not promoted
+        // This happens when master restarts and tries to rejoin, but we never promoted
+        if (op_type == OpType::MASTER_REJOIN) {
+            std::cout << "[BACKUP MODE] Received MASTER_REJOIN but not promoted - rejecting\n";
+            // Send failure response so master knows to start fresh
+            stub.SendSuccess(false);
+            // Close this connection gracefully, don't promote
+            break;  // Exit HandleReplication WITHOUT setting is_promoted = true
+        }
+        
+        // For task operations from master, receive the log entry
+        // Note: We already verified this is a master connection via REPLICATION_INIT handshake,
+        // so CREATE_TASK/UPDATE_TASK/etc. here are valid replication operations (not gateway mistakes)
         LogEntry entry = stub.ReceiveLogEntry();
         
         // Check for disconnect (entry_id == -1 indicates error)
         if (entry.get_entry_id() < 0) {
             std::cout << "ReceiveLogEntry failed - Primary disconnected" << std::endl;
             std::cout << "PROMOTING TO MASTER" << std::endl;
-            is_promoted = true;
+            {
+                std::lock_guard<std::mutex> lock(promotion_mutex);
+                is_promoted = true;
+            }
             std::cout << "Backup promoted! Now accepting client connections on port " << backup_port << std::endl;
             std::cout << "Total tasks replicated: " << task_manager.get_task_count() << std::endl;
             std::cout << "State machine log size: " << state_machine.get_log_size() << std::endl;
@@ -192,6 +280,7 @@ void HandleReplication(Socket* client_socket) {
         
         // Append to state machine log
         state_machine.append_to_log(entry);
+        next_entry_id = entry.get_entry_id() + 1;
         
         // Apply operation to task manager with vector clock
         OpType op = entry.get_op_type();
@@ -232,7 +321,12 @@ void HandleReplication(Socket* client_socket) {
                 
             case OpType::HEARTBEAT_PING:
             case OpType::HEARTBEAT_ACK:
-                // Heartbeat operations handled separately, not logged
+            case OpType::MASTER_REJOIN:
+            case OpType::STATE_TRANSFER_REQUEST:
+            case OpType::STATE_TRANSFER_RESPONSE:
+            case OpType::DEMOTE_ACK:
+            case OpType::REPLICATION_INIT:
+                // Control messages handled separately, not logged
                 break;
         }
         
@@ -240,7 +334,10 @@ void HandleReplication(Socket* client_socket) {
         if (!stub.SendSuccess(true)) {
             std::cout << "Failed to send ack to primary" << std::endl;
             std::cout << "Primary disconnected - PROMOTING TO MASTER" << std::endl;
-            is_promoted = true;
+            {
+                std::lock_guard<std::mutex> lock(promotion_mutex);
+                is_promoted = true;
+            }
             std::cout << "Backup promoted! Now accepting client connections on port " << backup_port << std::endl;
             std::cout << "Total tasks replicated: " << task_manager.get_task_count() << std::endl;
             std::cout << "State machine log size: " << state_machine.get_log_size() << std::endl;
@@ -288,27 +385,123 @@ int main(int argc, char* argv[]) {
     std::cout << "Backup listening on port " << port << "...\n";
     std::cout << "Waiting for primary connection or ready to promote...\n";
     
-    int client_counter = 0;
-    
     // Accept connections (from primary for replication OR from clients after promotion)
     while (server_running) {
-        if (is_promoted) {
-            std::cout << "[PROMOTED MODE] Waiting for client connections..." << std::endl;
+        bool currently_promoted;
+        {
+            std::lock_guard<std::mutex> lock(promotion_mutex);
+            currently_promoted = is_promoted;
+        }
+        
+        if (currently_promoted) {
+            std::cout << "[PROMOTED MODE] Waiting for connections (clients or master rejoin)..." << std::endl;
         }
         
         Socket* socket = server_socket.Accept();
         
         if (socket && socket->IsValid()) {
-            if (!is_promoted) {
-                // Still backup - handle replication
+            // Check current promotion state
+            {
+                std::lock_guard<std::mutex> lock(promotion_mutex);
+                currently_promoted = is_promoted;
+            }
+            
+            if (!currently_promoted) {
+                // Still backup - handle replication from master
                 std::cout << "[BACKUP MODE] Handling replication connection" << std::endl;
                 std::thread(HandleReplication, socket).detach();
-                // Note: is_promoted may be set to true inside HandleReplication
             } else {
-                // Promoted to master - handle clients like master does
-                std::cout << "[PROMOTED MODE] Handling client connection" << std::endl;
-                int client_id = client_counter++;
-                std::thread(HandleClient, socket, client_id).detach();
+                // Promoted mode - need to check if this is master rejoining or a client
+                // Peek at first OpType to determine
+                ServerStub peek_stub;
+                if (!peek_stub.Init(socket)) {
+                    delete socket;
+                    continue;
+                }
+                
+                OpType first_op = peek_stub.ReceiveOpType();
+                
+                if (first_op == OpType::MASTER_REJOIN) {
+                    // Master is rejoining - handle state transfer and demote
+                    std::cout << "[PROMOTED MODE] Master rejoin detected!" << std::endl;
+                    if (HandleMasterRejoin(socket)) {
+                        std::cout << "[BACKUP MODE] Successfully demoted, resuming backup mode\n";
+                    } else {
+                        std::cout << "[PROMOTED MODE] Master rejoin failed, staying promoted\n";
+                    }
+                    continue;  // Go back to Accept() - socket already handled
+                } else if (first_op == OpType::REPLICATION_INIT) {
+                    // Master is trying to replicate but we're promoted!
+                    // This shouldn't happen - master should use MASTER_REJOIN
+                    std::cout << "[PROMOTED MODE] Received REPLICATION_INIT but I'm promoted!\n";
+                    std::cout << "[PROMOTED MODE] Master should use MASTER_REJOIN instead.\n";
+                    std::cout << "[PROMOTED MODE] Rejecting connection - master will retry with MASTER_REJOIN.\n";
+                    peek_stub.SendSuccess(false);  // Reject the handshake
+                    delete socket;
+                    continue;  // Go back to Accept()
+                } else if (static_cast<int>(first_op) == -1) {
+                    // Connection closed immediately
+                    delete socket;
+                    continue;  // Go back to Accept()
+                } else {
+                    // It's a client connection - but we already consumed the OpType!
+                    // We need to handle this request inline
+                    std::cout << "[PROMOTED MODE] Client connection (first op: " << static_cast<int>(first_op) << ")" << std::endl;
+                    
+                    // Create a wrapper to handle this connection with the pre-read OpType
+                    // For simplicity, handle inline here
+                    Task task = peek_stub.ReceiveTask();
+                    bool success = false;
+                    OperationResponse op_response;
+                    
+                    switch (first_op) {
+                        case OpType::CREATE_TASK:
+                            success = task_manager.create_task(
+                                task.get_title(), task.get_description(),
+                                task.get_board_id(), task.get_created_by(),
+                                task.get_column(), task.get_client_id()
+                            );
+                            op_response.success = success;
+                            op_response.updated_task_id = success ? (task_manager.get_id_counter() - 1) : -1;
+                            peek_stub.SendOperationResponse(op_response);
+                            break;
+                            
+                        case OpType::UPDATE_TASK: {
+                            VectorClock vc(0);
+                            op_response = task_manager.update_task_with_conflict_detection(
+                                task.get_task_id(), task.get_description(), vc);
+                            peek_stub.SendOperationResponse(op_response);
+                            break;
+                        }
+                            
+                        case OpType::MOVE_TASK: {
+                            VectorClock vc(0);
+                            op_response = task_manager.move_task_with_conflict_detection(
+                                task.get_task_id(), task.get_column(), vc);
+                            peek_stub.SendOperationResponse(op_response);
+                            break;
+                        }
+                            
+                        case OpType::DELETE_TASK:
+                            success = task_manager.delete_task(task.get_task_id());
+                            peek_stub.SendSuccess(success);
+                            break;
+                            
+                        case OpType::GET_BOARD: {
+                            std::vector<Task> all_tasks = task_manager.get_all_tasks();
+                            peek_stub.SendTaskList(all_tasks);
+                            break;
+                        }
+                            
+                        default:
+                            peek_stub.SendSuccess(false);
+                            break;
+                    }
+                    
+                    // Gateway closes connection after each request, so just close socket
+                    // No need to spawn a thread that will immediately exit
+                    delete socket;
+                }
             }
         } else if (!server_running) {
             // Server shutting down

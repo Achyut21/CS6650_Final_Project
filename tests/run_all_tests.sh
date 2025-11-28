@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# Run All The Tests
+# Run All Test Suites
 
 echo "=========================================="
-echo "Running All The Test Suites"
+echo "Running All Test Suites"
 echo "=========================================="
 echo ""
 
@@ -17,6 +17,9 @@ cleanup() {
     pkill -9 master backup node 2>/dev/null
     sleep 2
 }
+
+# Make all scripts executable
+chmod +x "$SCRIPT_DIR"/*.sh
 
 echo "Test Suite 1: C++ Unit Tests"
 echo "------------------------------"
@@ -53,8 +56,8 @@ cleanup
 TEST5_RESULT=$?
 
 echo ""
-echo "Test Suite 6: Failover Test"
-echo "----------------------------"
+echo "Test Suite 6: Quick Failover Test"
+echo "----------------------------------"
 cleanup
 ./quick_failover.sh
 TEST6_RESULT=$?
@@ -65,20 +68,35 @@ echo ""
 echo "=========================================="
 echo "Test Summary"
 echo "=========================================="
-echo "Test Suite 1 (Unit Tests):        $([ $TEST1_RESULT -eq 0 ] && echo 'PASS' || echo 'FAIL')"
-echo "Test Suite 2 (State Machine):     $([ $TEST2_RESULT -eq 0 ] && echo 'PASS' || echo 'FAIL')"
-echo "Test Suite 3 (Replication):       $([ $TEST3_RESULT -eq 0 ] && echo 'PASS' || echo 'FAIL')"
-echo "Test Suite 4 (Integration):       $([ $TEST4_RESULT -eq 0 ] && echo 'PASS' || echo 'FAIL')"
-echo "Test Suite 5 (Conflicts):         $([ $TEST5_RESULT -eq 0 ] && echo 'PASS' || echo 'FAIL')"
-echo "Test Suite 6 (Failover):          $([ $TEST6_RESULT -eq 0 ] && echo 'PASS' || echo 'FAIL')"
+
+PASS_COUNT=0
+FAIL_COUNT=0
+
+check_result() {
+    if [ $1 -eq 0 ]; then
+        echo "$2: PASS"
+        ((PASS_COUNT++))
+    else
+        echo "$2: FAIL"
+        ((FAIL_COUNT++))
+    fi
+}
+
+check_result $TEST1_RESULT "Unit Tests"
+check_result $TEST2_RESULT "State Machine"
+check_result $TEST3_RESULT "Replication"
+check_result $TEST4_RESULT "Integration"
+check_result $TEST5_RESULT "Conflicts"
+check_result $TEST6_RESULT "Failover"
+
+echo "=========================================="
+echo "Passed: $PASS_COUNT / 6"
 echo "=========================================="
 
-TOTAL_FAILED=$((TEST1_RESULT + TEST2_RESULT + TEST3_RESULT + TEST4_RESULT + TEST5_RESULT + TEST6_RESULT))
-
-if [ $TOTAL_FAILED -eq 0 ]; then
-    echo "All tests passed"
+if [ $FAIL_COUNT -eq 0 ]; then
+    echo "All tests passed!"
     exit 0
 else
-    echo "Some tests failed"
+    echo "$FAIL_COUNT test(s) failed"
     exit 1
 fi

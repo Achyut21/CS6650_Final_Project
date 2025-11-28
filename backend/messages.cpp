@@ -587,10 +587,20 @@ void LogEntry::Unmarshal(const char *buffer)
     client_id = ntohl(net_client_id);
     offset += sizeof(int);
     
-    // Skip vector clock for now - will be handled separately
+    // Restore vector clock using set() method
     int net_clock_size;
     memcpy(&net_clock_size, buffer + offset, sizeof(int));
     int clock_size = ntohl(net_clock_size);
     offset += sizeof(int);
-    offset += clock_size * sizeof(int) * 2;
+    
+    for (int i = 0; i < clock_size; i++) {
+        int net_pid, net_count;
+        memcpy(&net_pid, buffer + offset, sizeof(int));
+        int pid = ntohl(net_pid);
+        offset += sizeof(int);
+        memcpy(&net_count, buffer + offset, sizeof(int));
+        int count = ntohl(net_count);
+        offset += sizeof(int);
+        timestamp.set(pid, count);
+    }
 }

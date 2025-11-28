@@ -1,9 +1,10 @@
 #ifndef CLIENT_STUB_H
 #define CLIENT_STUB_H
 
+#include <vector>
+#include <string>
 #include "Socket.h"
 #include "messages.h"
-#include <string>
 
 // Client stub for sending task operations
 class ClientStub {
@@ -30,6 +31,11 @@ public:
     // Receive responses
     Task ReceiveTask();
     bool ReceiveSuccess();
+    
+    // State transfer methods for master rejoin
+    bool SendStateTransferRequest();
+    bool ReceiveStateTransfer(std::vector<Task>& tasks, std::vector<LogEntry>& log, int& id_counter);
+    bool SendStateTransfer(const std::vector<Task>& tasks, const std::vector<LogEntry>& log, int id_counter);
     
     void Close();
 };

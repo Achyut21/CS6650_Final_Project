@@ -38,6 +38,12 @@ public:
     void merge_logs(const std::vector<LogEntry> &remote_log);
 
     size_t get_task_count() const;
+    
+    // State transfer methods for master rejoin
+    void clear_all_tasks();  // Clear all tasks (for receiving state transfer)
+    void set_id_counter(int id);  // Set next task ID
+    int get_id_counter() const;  // Get current ID counter
+    void add_task_direct(const Task& task);  // Add task without incrementing counter
 };
 
 #endif

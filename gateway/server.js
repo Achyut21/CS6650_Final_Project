@@ -20,6 +20,35 @@ let currentBackendHost = MASTER_HOST;
 let currentBackendPort = MASTER_PORT;
 let failedOverToBackup = false;
 
+// Health check: Try to reconnect to master periodically after failover
+function checkMasterHealth() {
+  if (!failedOverToBackup) return; // Only check if we've failed over
+  
+  const client = new net.Socket();
+  
+  client.setTimeout(1000); // Quick 1 second timeout
+  
+  client.connect(MASTER_PORT, MASTER_HOST, () => {
+    console.log('[HEALTH CHECK] Master is back online! Switching back to master.');
+    currentBackendHost = MASTER_HOST;
+    currentBackendPort = MASTER_PORT;
+    failedOverToBackup = false;
+    client.destroy();
+  });
+  
+  client.on('error', () => {
+    // Master still down, stay with backup
+    client.destroy();
+  });
+  
+  client.on('timeout', () => {
+    client.destroy();
+  });
+}
+
+// Check master health every 5 seconds after failover
+setInterval(checkMasterHealth, 5000);
+
 // Create Express app
 const app = express();
 const server = http.createServer(app);
@@ -49,7 +78,8 @@ const Column = {
 };
 
 // Helper: Send request to C++ backend (master or backup after failover)
-async function sendToBackend(opType, taskData, retryWithBackup = true) {
+// retryCount tracks how many retries we've done (max 2: original + 1 failover)
+async function sendToBackend(opType, taskData, retryCount = 0) {
   return new Promise((resolve, reject) => {
     const client = new net.Socket();
     let responseData = Buffer.alloc(0);
@@ -59,7 +89,7 @@ async function sendToBackend(opType, taskData, retryWithBackup = true) {
     
     client.connect(port, host, () => {
       try {
-        console.log('[DEBUG] Connected to master, sending operation...');
+        console.log(`[DEBUG] Connected to ${host}:${port}, sending operation...`);
         
         // Send operation type (4 bytes)
         const opBuffer = Buffer.alloc(4);
@@ -107,32 +137,33 @@ async function sendToBackend(opType, taskData, retryWithBackup = true) {
           
           console.log('[DEBUG] Response - success:', success, 'conflict:', conflict, 'rejected:', rejected);
           resolve({ success, conflict, rejected, taskId });
-        } else {
+        } else if (responseData.length >= 4) {
           // just success boolean
           const success = responseData.readInt32BE(0) === 1;
           console.log('[DEBUG] Success value:', success);
           resolve({ success, conflict: false, rejected: false });
+        } else {
+          // Empty or too short response - backend rejected
+          console.error('[DEBUG] Invalid response length:', responseData.length);
+          throw new Error('Invalid response from backend');
         }
       } catch (err) {
         console.error('[DEBUG] Error parsing response:', err);
-        reject(err);
+        // Try failover on parse error (might be backup that demoted)
+        if (retryCount < 1) {
+          tryFailover(opType, taskData, retryCount, host, resolve, reject);
+        } else {
+          reject(err);
+        }
       }
     });
     
     client.on('error', (err) => {
-      console.error('[DEBUG] Socket error:', err.message);
+      console.error(`[DEBUG] Socket error to ${host}:${port}:`, err.message);
       
-      // If master fails and we haven't failed over yet, try backup
-      if (!failedOverToBackup && retryWithBackup && host === MASTER_HOST) {
-        console.log('[FAILOVER] Master failed, switching to backup...');
-        currentBackendHost = BACKUP_HOST;
-        currentBackendPort = BACKUP_PORT;
-        failedOverToBackup = true;
-        
-        // Retry with backup
-        sendToBackend(opType, taskData, false)
-          .then(resolve)
-          .catch(reject);
+      // Try failover (either direction)
+      if (retryCount < 1) {
+        tryFailover(opType, taskData, retryCount, host, resolve, reject);
       } else {
         reject(err);
       }
@@ -140,9 +171,37 @@ async function sendToBackend(opType, taskData, retryWithBackup = true) {
     
     client.setTimeout(5000, () => {
       client.destroy();
-      reject(new Error('Connection timeout'));
+      
+      // Try failover on timeout
+      if (retryCount < 1) {
+        tryFailover(opType, taskData, retryCount, host, resolve, reject);
+      } else {
+        reject(new Error('Connection timeout'));
+      }
     });
   });
+}
+
+// Helper function for failover logic (works both directions: master<->backup)
+function tryFailover(opType, taskData, retryCount, failedHost, resolve, reject) {
+  if (failedHost === MASTER_HOST || currentBackendHost === MASTER_HOST) {
+    // Master failed, try backup
+    console.log('[FAILOVER] Master failed, switching to backup...');
+    currentBackendHost = BACKUP_HOST;
+    currentBackendPort = BACKUP_PORT;
+    failedOverToBackup = true;
+  } else {
+    // Backup failed, try master (fail-back)
+    console.log('[FAIL-BACK] Backup failed, switching back to master...');
+    currentBackendHost = MASTER_HOST;
+    currentBackendPort = MASTER_PORT;
+    failedOverToBackup = false;
+  }
+  
+  // Retry with the other backend
+  sendToBackend(opType, taskData, retryCount + 1)
+    .then(resolve)
+    .catch(reject);
 }
 
 // Serialize task to binary format for C++ backend
@@ -280,8 +339,8 @@ function deserializeTask(buffer, offset = 0) {
   };
 }
 
-// Get all tasks from backend (with failover support)
-async function getBoardFromBackend(retryWithBackup = true) {
+// Get all tasks from backend (with failover/fail-back support)
+async function getBoardFromBackend(retryCount = 0) {
   return new Promise((resolve, reject) => {
     const client = new net.Socket();
     let responseData = Buffer.alloc(0);
@@ -320,6 +379,11 @@ async function getBoardFromBackend(retryWithBackup = true) {
       try {
         console.log('[GET_BOARD] Received response:', responseData.length, 'bytes');
         
+        // Check for valid response (at least 4 bytes for count)
+        if (responseData.length < 4) {
+          throw new Error('Invalid response from backend');
+        }
+        
         // Read count (4 bytes)
         const count = responseData.readInt32BE(0);
         console.log('[GET_BOARD] Task count:', count);
@@ -343,24 +407,21 @@ async function getBoardFromBackend(retryWithBackup = true) {
         resolve(tasks);
       } catch (err) {
         console.error('[GET_BOARD] Error parsing response:', err);
-        reject(err);
+        // Try failover on parse error
+        if (retryCount < 1) {
+          tryGetBoardFailover(retryCount, host, resolve, reject);
+        } else {
+          reject(err);
+        }
       }
     });
     
     client.on('error', (err) => {
       console.error('[GET_BOARD] Socket error:', err.message);
       
-      // If master fails and we haven't failed over yet, try backup
-      if (!failedOverToBackup && retryWithBackup && host === MASTER_HOST) {
-        console.log('[GET_BOARD FAILOVER] Master failed, switching to backup...');
-        currentBackendHost = BACKUP_HOST;
-        currentBackendPort = BACKUP_PORT;
-        failedOverToBackup = true;
-        
-        // Retry with backup
-        getBoardFromBackend(false)
-          .then(resolve)
-          .catch(reject);
+      // Try failover (either direction)
+      if (retryCount < 1) {
+        tryGetBoardFailover(retryCount, host, resolve, reject);
       } else {
         reject(err);
       }
@@ -369,21 +430,36 @@ async function getBoardFromBackend(retryWithBackup = true) {
     client.setTimeout(5000, () => {
       client.destroy();
       
-      // Also try failover on timeout
-      if (!failedOverToBackup && retryWithBackup) {
-        console.log('[GET_BOARD FAILOVER] Timeout, switching to backup...');
-        currentBackendHost = BACKUP_HOST;
-        currentBackendPort = BACKUP_PORT;
-        failedOverToBackup = true;
-        
-        getBoardFromBackend(false)
-          .then(resolve)
-          .catch(reject);
+      // Try failover on timeout
+      if (retryCount < 1) {
+        tryGetBoardFailover(retryCount, host, resolve, reject);
       } else {
         reject(new Error('GET_BOARD timeout'));
       }
     });
   });
+}
+
+// Helper function for GET_BOARD failover logic
+function tryGetBoardFailover(retryCount, failedHost, resolve, reject) {
+  if (failedHost === MASTER_HOST || currentBackendHost === MASTER_HOST) {
+    // Master failed, try backup
+    console.log('[GET_BOARD FAILOVER] Master failed, switching to backup...');
+    currentBackendHost = BACKUP_HOST;
+    currentBackendPort = BACKUP_PORT;
+    failedOverToBackup = true;
+  } else {
+    // Backup failed, try master (fail-back)
+    console.log('[GET_BOARD FAIL-BACK] Backup failed, switching back to master...');
+    currentBackendHost = MASTER_HOST;
+    currentBackendPort = MASTER_PORT;
+    failedOverToBackup = false;
+  }
+  
+  // Retry with the other backend
+  getBoardFromBackend(retryCount + 1)
+    .then(resolve)
+    .catch(reject);
 }
 
 // REST API Endpoints

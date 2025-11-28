@@ -26,10 +26,15 @@ BACKUP_SOURCES = backup.cpp
 BACKUP_OBJECTS = $(BACKUP_SOURCES:.cpp=.o)
 BACKUP_EXEC = backup
 
-.PHONY: all clean test test_sm build_master build_backup
+# Test client
+TEST_CLIENT_SOURCES = test_client.cpp
+TEST_CLIENT_OBJECTS = $(TEST_CLIENT_SOURCES:.cpp=.o)
+TEST_CLIENT_EXEC = test_client
+
+.PHONY: all clean test test_sm build_master build_backup build_test_client
 
 # Default target: build all
-all: $(TEST_EXEC) $(SM_TEST_EXEC) $(MASTER_EXEC) $(BACKUP_EXEC)
+all: $(TEST_EXEC) $(SM_TEST_EXEC) $(MASTER_EXEC) $(BACKUP_EXEC) $(TEST_CLIENT_EXEC)
 
 # Build test executable
 $(TEST_EXEC): $(OBJECTS) $(TEST_OBJECTS)
@@ -45,6 +50,10 @@ $(MASTER_EXEC): $(OBJECTS) $(MASTER_OBJECTS)
 
 # Build backup executable
 $(BACKUP_EXEC): $(OBJECTS) $(BACKUP_OBJECTS)
+	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+# Build test client executable
+$(TEST_CLIENT_EXEC): $(OBJECTS) $(TEST_CLIENT_OBJECTS)
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Compile object files
@@ -65,9 +74,12 @@ build_master: $(MASTER_EXEC)
 # Build backup only
 build_backup: $(BACKUP_EXEC)
 
+# Build test client only
+build_test_client: $(TEST_CLIENT_EXEC)
+
 # Clean build artifacts
 clean:
-	rm -f $(OBJECTS) $(TEST_OBJECTS) $(SM_TEST_OBJECTS) $(MASTER_OBJECTS) $(BACKUP_OBJECTS) $(TEST_EXEC) $(SM_TEST_EXEC) $(MASTER_EXEC) $(BACKUP_EXEC)
+	rm -f $(OBJECTS) $(TEST_OBJECTS) $(SM_TEST_OBJECTS) $(MASTER_OBJECTS) $(BACKUP_OBJECTS) $(TEST_CLIENT_OBJECTS) $(TEST_EXEC) $(SM_TEST_EXEC) $(MASTER_EXEC) $(BACKUP_EXEC) $(TEST_CLIENT_EXEC)
 
 # Dependencies
 messages.o: messages.cpp messages.h
@@ -81,3 +93,4 @@ ServerStub.o: ServerStub.cpp ServerStub.h Socket.h messages.h
 replication.o: replication.cpp replication.h Socket.h ClientStub.h messages.h
 master.o: master.cpp Socket.h ServerStub.h task_manager.h messages.h
 backup.o: backup.cpp Socket.h ServerStub.h task_manager.h state_machine.h messages.h
+test_client.o: test_client.cpp ClientStub.h Socket.h messages.h

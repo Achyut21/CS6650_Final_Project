@@ -99,21 +99,27 @@ export function Board() {
     };
 
     const handleTaskCreated = (data: unknown) => {
-      const task = data as Task;
-      setTasks(prev => [...prev, task]);
+      const { task } = data as { task: Task };
+      setTasks(prev => {
+        // Check if task already exists (from our own optimistic update)
+        if (prev.some(t => t.task_id === task.task_id)) {
+          return prev;
+        }
+        return [...prev, task];
+      });
       markAsRemoteUpdate(task.task_id);
       showToast(`New task created by ${task.created_by}`, 'info');
     };
 
     const handleTaskUpdated = (data: unknown) => {
-      const task = data as Task;
-      setTasks(prev => prev.map(t => t.task_id === task.task_id ? task : t));
+      const { task } = data as { task: Task };
+      setTasks(prev => prev.map(t => t.task_id === task.task_id ? { ...t, ...task } : t));
       markAsRemoteUpdate(task.task_id);
     };
 
     const handleTaskMoved = (data: unknown) => {
-      const task = data as Task;
-      setTasks(prev => prev.map(t => t.task_id === task.task_id ? task : t));
+      const { task } = data as { task: Task };
+      setTasks(prev => prev.map(t => t.task_id === task.task_id ? { ...t, ...task } : t));
       markAsRemoteUpdate(task.task_id);
     };
 
@@ -218,7 +224,14 @@ export function Board() {
           ...data,
           created_by: 'You',
         });
-        setTasks(prev => prev.map(t => t.task_id === tempId ? created : t));
+        setTasks(prev => {
+          // Replace temp task with created task
+          const updated = prev.map(t => t.task_id === tempId ? created : t);
+          // Remove duplicates (WebSocket may have added it first)
+          return updated.filter((t, index, arr) => 
+            arr.findIndex(x => x.task_id === t.task_id) === index
+          );
+        });
         showToast('Task created successfully', 'success');
       } catch {
         showToast('Task created locally - backend unavailable', 'info');

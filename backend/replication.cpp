@@ -25,6 +25,26 @@ void ReplicationManager::add_backup(const std::string& ip, int port) {
     // Try to connect
     if (stub->Init(ip, port)) {
         std::cout << "Connected to backup at " << ip << ":" << port << "\n";
+        
+        // Send REPLICATION_INIT handshake to identify as master
+        if (!stub->SendOpType(OpType::REPLICATION_INIT)) {
+            std::cerr << "Failed to send REPLICATION_INIT to backup\n";
+            delete stub;
+            backup_stubs.push_back(nullptr);
+            backup_connected.push_back(false);
+            return;
+        }
+        
+        // Wait for acknowledgment
+        if (!stub->ReceiveSuccess()) {
+            std::cerr << "Backup rejected REPLICATION_INIT (may be promoted)\n";
+            delete stub;
+            backup_stubs.push_back(nullptr);
+            backup_connected.push_back(false);
+            return;
+        }
+        
+        std::cout << "Replication handshake successful with backup\n";
         backup_stubs.push_back(stub);
         backup_connected.push_back(true);
     } else {

@@ -13,7 +13,18 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 GATEWAY_DIR="$PROJECT_ROOT/gateway"
 
-# Cleanup
+# Cleanup function
+cleanup() {
+    echo ""
+    echo "Cleaning up..."
+    kill -9 $MASTER_PID $BACKUP_PID $GATEWAY_PID 2>/dev/null
+    pkill -9 master backup node 2>/dev/null
+    sleep 1
+}
+
+trap cleanup EXIT
+
+# Cleanup first
 echo "Cleaning up old processes..."
 pkill -9 master backup node 2>/dev/null
 sleep 1
@@ -37,6 +48,8 @@ sleep 3
 echo "All components started"
 echo ""
 
+TEST_PASSED=true
+
 # Test 1: Normal update (no conflict)
 echo "Test 1: Normal update (should succeed without conflict)"
 echo "  Creating task..."
@@ -45,7 +58,12 @@ RESPONSE=$(curl -s -X POST http://localhost:8080/api/tasks \
   -d '{"title":"Conflict Test Task","description":"Original description","column":0,"created_by":"user1","board_id":"board-1"}')
 
 TASK_ID=$(echo "$RESPONSE" | grep -o '"task_id":[0-9]*' | grep -o '[0-9]*')
-echo "  Created task with ID: $TASK_ID"
+if [ -z "$TASK_ID" ]; then
+    echo "  FAILED: Could not create task"
+    TEST_PASSED=false
+else
+    echo "  Created task with ID: $TASK_ID"
+fi
 
 echo "  Updating task (first update)..."
 RESPONSE=$(curl -s -X PATCH http://localhost:8080/api/tasks/$TASK_ID \
@@ -53,10 +71,9 @@ RESPONSE=$(curl -s -X PATCH http://localhost:8080/api/tasks/$TASK_ID \
   -d '{"title":"Updated Title v1"}')
 
 if echo "$RESPONSE" | grep -q '"conflict":false'; then
-    echo "  No conflict detected (expected for single update)"
+    echo "  PASSED: No conflict detected (expected)"
 elif echo "$RESPONSE" | grep -q '"conflict":true'; then
-    echo "  Conflict flag set: true"
-    echo "  Response: $RESPONSE"
+    echo "  INFO: Conflict flag set (may be expected)"
 else
     echo "  Response: $RESPONSE"
 fi
@@ -76,7 +93,7 @@ for i in {1..5}; do
     elif echo "$RESPONSE" | grep -q '"rejected":true'; then
         echo "  Update $i: REJECTED (outdated)"
     else
-        echo "  Update $i: Applied successfully"
+        echo "  Update $i: Applied"
     fi
     sleep 0.1
 done
@@ -84,40 +101,37 @@ done
 echo ""
 
 # Test 3: Move operation
-echo "Test 3: Move task to test vector clock on MOVE operations"
+echo "Test 3: Move task to test vector clock on MOVE"
 RESPONSE=$(curl -s -X PATCH http://localhost:8080/api/tasks/$TASK_ID \
   -H "Content-Type: application/json" \
   -d '{"column":1}')
 
-if echo "$RESPONSE" | grep -q '"conflict":true'; then
-    echo "  Move conflict detected"
-elif echo "$RESPONSE" | grep -q '"rejected":true'; then
-    echo "  Move rejected"
+if echo "$RESPONSE" | grep -q "task_id"; then
+    echo "  Task moved successfully"
 else
-    echo "  Task moved successfully (no conflict)"
+    echo "  Move failed: $RESPONSE"
+    TEST_PASSED=false
 fi
 
 echo ""
 echo "=========================================="
-echo "Checking Backend Logs for Conflict Messages"
+echo "Checking Backend Logs"
 echo "=========================================="
 echo ""
 
-echo "=== MASTER LOG (last 20 lines) ==="
-tail -20 /tmp/master_conflict.log
-echo ""
+echo "=== MASTER LOG (conflict messages) ==="
+grep -i "conflict" /tmp/master_conflict.log | tail -10 || echo "No conflict messages"
 
-echo "=== BACKUP LOG (last 10 lines) ==="
-tail -10 /tmp/backup_conflict.log
 echo ""
-
-echo "=== GATEWAY LOG (conflicts only) ==="
-grep -i "conflict\|rejected" /tmp/gateway_conflict.log | tail -10 || echo "No conflicts detected in gateway"
+echo "=== BACKUP LOG (last 5 lines) ==="
+tail -5 /tmp/backup_conflict.log
 
 echo ""
 echo "=========================================="
-echo "Test Complete"
-echo "=========================================="
-echo ""
-echo "Cleanup: kill $MASTER_PID $BACKUP_PID $GATEWAY_PID"
-echo "Or run: pkill -9 master backup node"
+if [ "$TEST_PASSED" = true ]; then
+    echo "Test Complete - All operations succeeded"
+    exit 0
+else
+    echo "Test Complete - Some operations failed"
+    exit 1
+fi

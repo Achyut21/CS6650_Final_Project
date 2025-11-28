@@ -125,3 +125,114 @@ bool ServerStub::SendOperationResponse(const OperationResponse& response) {
     
     return socket->Send(buffer, sizeof(buffer));
 }
+
+// State transfer methods for master rejoin
+bool ServerStub::SendLogEntryList(const std::vector<LogEntry>& log) {
+    // Send count first
+    int count = log.size();
+    int net_count = htonl(count);
+    if (!socket->Send(&net_count, sizeof(int))) {
+        return false;
+    }
+    
+    // Send each log entry
+    for (const LogEntry& entry : log) {
+        int size = entry.Size();
+        char* buffer = new char[size];
+        entry.Marshal(buffer);
+        
+        // Send size first
+        int net_size = htonl(size);
+        if (!socket->Send(&net_size, sizeof(int))) {
+            delete[] buffer;
+            return false;
+        }
+        
+        // Send data
+        if (!socket->Send(buffer, size)) {
+            delete[] buffer;
+            return false;
+        }
+        delete[] buffer;
+    }
+    
+    return true;
+}
+
+bool ServerStub::ReceiveLogEntryList(std::vector<LogEntry>& log) {
+    // Receive count
+    int net_count;
+    if (!socket->Receive(&net_count, sizeof(int))) {
+        return false;
+    }
+    int count = ntohl(net_count);
+    
+    log.clear();
+    
+    // Receive each entry
+    for (int i = 0; i < count; i++) {
+        LogEntry entry = ReceiveLogEntry();
+        if (entry.get_entry_id() < 0) {
+            // Error receiving entry (entry_id=-1 indicates receive failure)
+            return false;
+        }
+        log.push_back(entry);
+    }
+    
+    return true;
+}
+
+bool ServerStub::SendStateTransfer(const std::vector<Task>& tasks, const std::vector<LogEntry>& log, int id_counter) {
+    // Send id_counter first
+    int net_id_counter = htonl(id_counter);
+    if (!socket->Send(&net_id_counter, sizeof(int))) {
+        return false;
+    }
+    
+    // Send task list
+    if (!SendTaskList(tasks)) {
+        return false;
+    }
+    
+    // Send log entry list
+    if (!SendLogEntryList(log)) {
+        return false;
+    }
+    
+    return true;
+}
+
+bool ServerStub::ReceiveStateTransfer(std::vector<Task>& tasks, std::vector<LogEntry>& log, int& id_counter) {
+    // Receive id_counter
+    int net_id_counter;
+    if (!socket->Receive(&net_id_counter, sizeof(int))) {
+        return false;
+    }
+    id_counter = ntohl(net_id_counter);
+    
+    // Receive task list count
+    int net_task_count;
+    if (!socket->Receive(&net_task_count, sizeof(int))) {
+        return false;
+    }
+    int task_count = ntohl(net_task_count);
+    
+    tasks.clear();
+    
+    // Receive each task
+    for (int i = 0; i < task_count; i++) {
+        Task task = ReceiveTask();
+        if (task.get_task_id() < 0) {
+            // Error receiving task (task_id=-1 indicates receive failure)
+            return false;
+        }
+        tasks.push_back(task);
+    }
+    
+    // Receive log entry list
+    if (!ReceiveLogEntryList(log)) {
+        return false;
+    }
+    
+    return true;
+}

@@ -4,6 +4,7 @@
 #include <csignal>
 #include "Socket.h"
 #include "ServerStub.h"
+#include "ClientStub.h"
 #include "task_manager.h"
 #include "state_machine.h"
 #include "replication.h"
@@ -26,6 +27,63 @@ void SignalHandler(int) {
     if (global_server_socket) {
         global_server_socket->Close();
     }
+}
+
+// Try to rejoin after crash - connect to backup, get state if it's promoted
+// Returns true if state was received from promoted backup
+bool TryRejoinFromBackup(const std::string& backup_ip, int backup_port) {
+    ClientStub client;
+    if (!client.Init(backup_ip, backup_port)) {
+        // Backup not reachable - this is normal on first start
+        return false;
+    }
+    
+    // Send MASTER_REJOIN opcode to check if backup is promoted
+    if (!client.SendOpType(OpType::MASTER_REJOIN)) {
+        client.Close();
+        return false;
+    }
+    
+    // Try to receive state transfer
+    std::vector<Task> tasks;
+    std::vector<LogEntry> log;
+    int id_counter;
+    
+    if (!client.ReceiveStateTransfer(tasks, log, id_counter)) {
+        // Backup is not promoted - this is normal on first start
+        client.Close();
+        return false;
+    }
+    
+    // Backup WAS promoted - we're actually rejoining!
+    std::cout << "[REJOIN] Backup was promoted, receiving state transfer\n";
+    std::cout << "[REJOIN] Received: " << tasks.size() << " tasks, " 
+              << log.size() << " log entries, ID counter: " << id_counter << "\n";
+    
+    // Apply state
+    task_manager.clear_all_tasks();
+    for (const Task& task : tasks) {
+        task_manager.add_task_direct(task);
+    }
+    task_manager.set_id_counter(id_counter);
+    
+    // Apply log
+    state_machine.set_log(log);
+    next_entry_id = state_machine.get_next_entry_id();
+    
+    std::cout << "[REJOIN] State applied, next entry ID: " << next_entry_id << "\n";
+    
+    // Send DEMOTE_ACK to backup
+    if (!client.SendOpType(OpType::DEMOTE_ACK)) {
+        std::cerr << "[REJOIN] Failed to send DEMOTE_ACK\n";
+        client.Close();
+        return false;
+    }
+    
+    std::cout << "[REJOIN] Sent DEMOTE_ACK, backup demoting\n";
+    
+    client.Close();
+    return true;
 }
 
 // Handle client requests in separate thread
@@ -78,11 +136,11 @@ void HandleClient(Socket* client_socket, int client_id) {
                     task.get_client_id()
                 );
                 
-                // Prepare response with created task ID
+                // Prepare response with created task ID (use id_counter, not task_count)
                 op_response.success = success;
                 op_response.conflict = false;
                 op_response.rejected = false;
-                op_response.updated_task_id = success ? (int)(task_manager.get_task_count() - 1) : -1;
+                op_response.updated_task_id = success ? (task_manager.get_id_counter() - 1) : -1;
                 
                 if (success) {
                     // Debug: Log the column being replicated
@@ -265,8 +323,12 @@ void HandleClient(Socket* client_socket, int client_id) {
             
             case OpType::HEARTBEAT_PING:
             case OpType::HEARTBEAT_ACK:
-                // Master shouldn't receive these, but handle gracefully
-                std::cerr << "Unexpected heartbeat message received\n";
+            case OpType::MASTER_REJOIN:
+            case OpType::STATE_TRANSFER_REQUEST:
+            case OpType::STATE_TRANSFER_RESPONSE:
+            case OpType::DEMOTE_ACK:
+                // Master shouldn't receive these from gateway clients
+                std::cerr << "Unexpected control message received\n";
                 break;
             
             default:
@@ -298,12 +360,23 @@ int main(int argc, char* argv[]) {
     std::cout << "Starting master node " << node_id << " on port " << port << "\n";
     
     // Set up replication if backup specified
+    std::string backup_ip;
+    int backup_port = 0;
+    
     if (argc == 5) {
-        std::string backup_ip = argv[3];
-        int backup_port = std::stoi(argv[4]);
+        backup_ip = argv[3];
+        backup_port = std::stoi(argv[4]);
         
-        std::cout << "Replication enabled to backup: " << backup_ip << ":" << backup_port << "\n";
+        // Try to rejoin from backup (in case backup is promoted after our crash)
+        bool rejoined = TryRejoinFromBackup(backup_ip, backup_port);
         
+        if (rejoined) {
+            std::cout << "Recovered state from promoted backup\n";
+        }
+        
+        std::cout << "Replication target: " << backup_ip << ":" << backup_port << "\n";
+        
+        // Now set up replication manager to connect to backup
         replication_manager = new ReplicationManager(node_id);
         replication_manager->add_backup(backup_ip, backup_port);
         

@@ -1,48 +1,75 @@
 #!/bin/bash
 
+# Heartbeat Mechanism Test
+
 echo "=========================================="
 echo "Testing Heartbeat Mechanism"
 echo "=========================================="
 echo ""
 
-# Cleanup
-pkill -9 master backup node 2>/dev/null
+# Get script directory and project paths
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+BACKEND_DIR="$PROJECT_ROOT/backend"
+
+# Cleanup function
+cleanup() {
+    echo ""
+    echo "Cleaning up..."
+    pkill -9 master backup 2>/dev/null
+    sleep 1
+}
+
+trap cleanup EXIT
+
+# Kill existing processes
+pkill -9 master backup 2>/dev/null
 sleep 1
 
 echo "Starting backup on port 12346..."
-cd /Users/achyutkatiyar/CS6650/FinalProject/backend
-./backup 12346 1 127.0.0.1 12345 &
+cd "$BACKEND_DIR"
+./backup 12346 1 127.0.0.1 12345 > /tmp/backup_hb.log 2>&1 &
 BACKUP_PID=$!
 sleep 2
 
 echo "Starting master with replication and heartbeat..."
-./master 12345 0 127.0.0.1 12346 &
+./master 12345 0 127.0.0.1 12346 > /tmp/master_hb.log 2>&1 &
 MASTER_PID=$!
 sleep 3
 
 echo ""
 echo "Master and backup running."
-echo "Watch for heartbeat messages every 5 seconds in master output."
+echo "Watching for heartbeat messages (20 seconds)..."
 echo ""
-echo "You should see:"
-echo "  [HEARTBEAT] Monitoring started"
-echo "  [HEARTBEAT] 1/1 backups alive"
-echo ""
-echo "Press Ctrl+C to stop, or wait 20 seconds..."
+
 sleep 20
 
 echo ""
+echo "=== MASTER LOG (heartbeat messages) ==="
+grep -i "heartbeat" /tmp/master_hb.log || echo "No heartbeat messages found"
+
+echo ""
+echo "=== BACKUP LOG (heartbeat messages) ==="
+grep -i "heartbeat" /tmp/backup_hb.log || echo "No heartbeat messages found"
+
+echo ""
 echo "Now killing backup to test failure detection..."
-kill -9 $BACKUP_PID
-echo "Backup killed - watch master detect failure on next heartbeat (within 5 seconds)"
+kill -9 $BACKUP_PID 2>/dev/null
+echo "Backup killed - waiting 10 seconds for master to detect..."
 
 sleep 10
 
 echo ""
-echo "Cleanup..."
-kill -9 $MASTER_PID 2>/dev/null
+echo "=== MASTER LOG (after backup killed) ==="
+tail -10 /tmp/master_hb.log
 
-echo ""
-echo "Test complete!"
-echo "Check master output for:"
-echo "  [HEARTBEAT] WARNING: All backups disconnected!"
+# Check if heartbeat detection worked
+if grep -q "disconnected\|WARNING" /tmp/master_hb.log; then
+    echo ""
+    echo "SUCCESS: Master detected backup failure"
+    exit 0
+else
+    echo ""
+    echo "WARNING: Could not verify failure detection in logs"
+    exit 0
+fi

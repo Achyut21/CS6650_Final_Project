@@ -271,3 +271,37 @@ bool TaskManager::create_task(std::string description, int client_id)
 {
     return create_task("Task", description, "board-1", "user", Column::TODO, client_id);
 }
+
+// State transfer methods for master rejoin
+void TaskManager::clear_all_tasks()
+{
+    std::lock_guard<std::mutex> lock(task_lock);
+    tasks.clear();
+    clocks.clear();
+    id_counter = 0;
+    std::cout << "[STATE_TRANSFER] All tasks cleared\n";
+}
+
+void TaskManager::set_id_counter(int id)
+{
+    std::lock_guard<std::mutex> lock(task_lock);
+    id_counter = id;
+}
+
+int TaskManager::get_id_counter() const
+{
+    return id_counter;
+}
+
+void TaskManager::add_task_direct(const Task& task)
+{
+    std::lock_guard<std::mutex> lock(task_lock);
+    int task_id = task.get_task_id();
+    tasks.emplace(task_id, task);
+    clocks.push_back(&tasks[task_id].get_clock());
+    
+    // Update id_counter if needed
+    if (task_id >= id_counter) {
+        id_counter = task_id + 1;
+    }
+}

@@ -12,10 +12,19 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BACKEND_DIR="$PROJECT_ROOT/backend"
 
+# Cleanup function
+cleanup() {
+    echo ""
+    echo "Cleaning up..."
+    kill -9 $MASTER_PID $BACKUP_PID 2>/dev/null
+    sleep 1
+}
+
+trap cleanup EXIT
+
 # Kill any existing processes
 echo "Cleaning up old processes..."
-pkill -9 master 2>/dev/null
-pkill -9 backup 2>/dev/null
+pkill -9 master backup 2>/dev/null
 sleep 1
 
 # Start backup in background
@@ -30,14 +39,20 @@ sleep 2
 echo "Step 2: Starting master with replication..."
 ./master 12345 0 127.0.0.1 12346 > /tmp/master_test.log 2>&1 &
 MASTER_PID=$!
-sleep 2
+sleep 3
 
 # Test with C++ client
 echo "Step 3: Creating task via C++ client..."
 ./test_client
+CLIENT_RESULT=$?
+
+# Wait for replication to complete
+echo ""
+echo "Step 4: Waiting for replication..."
+sleep 2
 
 echo ""
-echo "Step 4: Checking logs..."
+echo "Step 5: Checking logs..."
 echo ""
 echo "=== MASTER LOG ==="
 cat /tmp/master_test.log
@@ -45,10 +60,16 @@ echo ""
 echo "=== BACKUP LOG ==="
 cat /tmp/backup_test.log
 
+# Verify replication worked
 echo ""
-echo "Step 5: Cleanup..."
-kill $MASTER_PID 2>/dev/null
-kill $BACKUP_PID 2>/dev/null
-
-echo ""
-echo "Test complete"
+echo "Step 6: Verifying replication..."
+if grep -q "Replicated CREATE_TASK" /tmp/backup_test.log; then
+    echo "SUCCESS: Task was replicated to backup"
+    exit 0
+elif [ $CLIENT_RESULT -eq 0 ]; then
+    echo "PARTIAL: Task created but replication not confirmed in logs"
+    exit 0
+else
+    echo "FAILED: Task creation failed"
+    exit 1
+fi

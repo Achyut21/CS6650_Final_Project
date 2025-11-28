@@ -61,7 +61,12 @@ void StateMachine::replay_log(TaskManager& tm, const std::vector<LogEntry>& entr
                 
             case OpType::HEARTBEAT_PING:
             case OpType::HEARTBEAT_ACK:
-                // Heartbeat messages are not logged, skip
+            case OpType::MASTER_REJOIN:
+            case OpType::STATE_TRANSFER_REQUEST:
+            case OpType::STATE_TRANSFER_RESPONSE:
+            case OpType::DEMOTE_ACK:
+            case OpType::REPLICATION_INIT:
+                // Control messages are not state-changing, skip
                 break;
         }
     }
@@ -71,4 +76,31 @@ void StateMachine::replay_log(TaskManager& tm, const std::vector<LogEntry>& entr
 size_t StateMachine::get_log_size() const {
     std::lock_guard<std::mutex> lock(log_mutex);
     return log.size();
+}
+
+// State transfer methods for master rejoin
+void StateMachine::set_log(const std::vector<LogEntry>& new_log) {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    log = new_log;
+    if (!log.empty()) {
+        next_entry_id = log.back().get_entry_id() + 1;
+    } else {
+        next_entry_id = 0;
+    }
+}
+
+void StateMachine::clear_log() {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    log.clear();
+    next_entry_id = 0;
+}
+
+int StateMachine::get_next_entry_id() const {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    return next_entry_id;
+}
+
+void StateMachine::set_next_entry_id(int id) {
+    std::lock_guard<std::mutex> lock(log_mutex);
+    next_entry_id = id;
 }
