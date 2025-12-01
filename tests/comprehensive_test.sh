@@ -5,8 +5,6 @@
 # Tests all system functionality including edge cases
 # =============================================================================
 
-# Note: Not using 'set -e' because we handle errors explicitly in each test
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'

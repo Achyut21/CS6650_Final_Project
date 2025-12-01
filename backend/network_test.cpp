@@ -8,6 +8,7 @@
 #include <chrono>
 #include <atomic>
 #include <cstring>
+#include <arpa/inet.h>
 #include "Socket.h"
 #include "ClientStub.h"
 #include "ServerStub.h"
