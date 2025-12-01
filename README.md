@@ -7,9 +7,9 @@ Real-time collaborative Kanban board with primary-backup replication for fault t
 1. [Architecture Overview](#architecture-overview)
 2. [Prerequisites](#prerequisites)
 3. [Project Structure](#project-structure)
-4. [Unit Tests](#unit-tests)
-5. [Khoury Cluster Deployment](#khoury-cluster-deployment)
-6. [Testing Guide](#testing-guide)
+4. [Khoury Cluster Deployment](#khoury-cluster-deployment)
+5. [Testing Guide](#testing-guide)
+6. [Unit Tests](#unit-tests)
 7. [Troubleshooting](#troubleshooting)
 8. [Clean Shutdown](#clean-shutdown)
 9. [Quick Reference](#quick-reference)
@@ -81,57 +81,6 @@ Real-time collaborative Kanban board with primary-backup replication for fault t
 │   └── vite.config.ts
 └── build_frontend.sh       # Build script
 ```
-
-## Unit Tests
-
-The backend includes comprehensive unit test suites. Running `make` builds all executables including the test binaries:
-
-### Build All Tests
-
-```bash
-cd <local-path>/backend
-make clean && make
-```
-
-### Available Test Suites
-
-| Test Suite | Command | Description |
-|------------|---------|-------------|
-| Task Manager Tests | `./run_tests` | Tests VectorClock, Task, and TaskManager operations |
-| State Machine Tests | `./run_sm_tests` | Tests operation log, replay, and state reconstruction |
-| Marshalling Tests | `./run_marshal_tests` | Tests binary serialization for Task and LogEntry |
-| Conflict Tests | `./run_conflict_tests` | Tests vector clock logic and conflict resolution |
-| Network Tests | `./run_network_tests` | Tests TCP communication and stub protocols |
-
-### Test Suite Details
-
-**Task Manager Tests (`run_tests`)**
-- VectorClock initialization, increment, update, and comparison
-- Task creation, setters, and vector clock access
-- TaskManager CRUD operations and workflow tests
-
-**State Machine Tests (`run_sm_tests`)**
-- Log append and retrieval operations
-- Log replay with CREATE, UPDATE, MOVE, DELETE operations
-- State reconstruction from operation log
-
-**Marshalling Tests (`run_marshal_tests`)**
-- Task marshal/unmarshal with various data types
-- LogEntry serialization for all operation types
-- Unicode support and edge cases (empty strings, max integers)
-- Multiple marshal/unmarshal cycles
-
-**Conflict Resolution Tests (`run_conflict_tests`)**
-- Vector clock comparison (equal, greater, less, concurrent)
-- Conflict detection with newer/older clocks
-- Concurrent updates with last-write-wins resolution
-- Multi-threaded conflict scenarios
-
-**Network Protocol Tests (`run_network_tests`)**
-- Socket bind, listen, connect, accept
-- Data transfer (integers, strings, large payloads)
-- Stub communication (Task, OpType, LogEntry)
-- Heartbeat protocol and operation responses
 
 ## Khoury Cluster Deployment
 
@@ -569,6 +518,58 @@ curl -X POST http://localhost:8080/api/tasks \
 ```
 
 **Expected**: 90th percentile latency under 200ms, 99th percentile under 500ms.
+
+
+## Unit Tests
+
+The backend includes comprehensive unit test suites. Running `make` builds all executables including the test binaries:
+
+### Build All Tests
+
+```bash
+cd <local-path>/backend
+make clean && make
+```
+
+### Available Test Suites
+
+| Test Suite | Command | Description |
+|------------|---------|-------------|
+| Task Manager Tests | `./run_tests` | Tests VectorClock, Task, and TaskManager operations |
+| State Machine Tests | `./run_sm_tests` | Tests operation log, replay, and state reconstruction |
+| Marshalling Tests | `./run_marshal_tests` | Tests binary serialization for Task and LogEntry |
+| Conflict Tests | `./run_conflict_tests` | Tests vector clock logic and conflict resolution |
+| Network Tests | `./run_network_tests` | Tests TCP communication and stub protocols |
+
+### Test Suite Details
+
+**Task Manager Tests (`run_tests`)**
+- VectorClock initialization, increment, update, and comparison
+- Task creation, setters, and vector clock access
+- TaskManager CRUD operations and workflow tests
+
+**State Machine Tests (`run_sm_tests`)**
+- Log append and retrieval operations
+- Log replay with CREATE, UPDATE, MOVE, DELETE operations
+- State reconstruction from operation log
+
+**Marshalling Tests (`run_marshal_tests`)**
+- Task marshal/unmarshal with various data types
+- LogEntry serialization for all operation types
+- Unicode support and edge cases (empty strings, max integers)
+- Multiple marshal/unmarshal cycles
+
+**Conflict Resolution Tests (`run_conflict_tests`)**
+- Vector clock comparison (equal, greater, less, concurrent)
+- Conflict detection with newer/older clocks
+- Concurrent updates with last-write-wins resolution
+- Multi-threaded conflict scenarios
+
+**Network Protocol Tests (`run_network_tests`)**
+- Socket bind, listen, connect, accept
+- Data transfer (integers, strings, large payloads)
+- Stub communication (Task, OpType, LogEntry)
+- Heartbeat protocol and operation responses
 
 
 ## Troubleshooting
