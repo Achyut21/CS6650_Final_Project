@@ -52,7 +52,7 @@ bool TaskManager::update_task(int task_id, const std::string &title, const std::
             std::chrono::system_clock::now().time_since_epoch()).count());
         return true;
     } else if (comparison < 0) {
-        // New update is causally newer - apply it
+        // Apply new update as it is causally newer
         if (!title.empty()) it->second.set_title(title);
         if (!description.empty()) it->second.set_description(description);
         it->second.get_clock().update(new_clock);
@@ -134,7 +134,7 @@ bool TaskManager::delete_task(int task_id)
     return true;
 }
 
-// Search for task by id in task map. If not found, throw error - if found return Task
+// Search for task by id in task map. If not found, throw error and if found return Task
 Task TaskManager::get_task(int id)
 {
     std::lock_guard<std::mutex> lock(task_lock);
