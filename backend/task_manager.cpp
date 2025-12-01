@@ -29,7 +29,7 @@ bool TaskManager::create_task(std::string title, std::string description,
 
 // Update task with vector clock conflict detection
 // Returns true if update applied, false if rejected due to causality
-bool TaskManager::update_task(int task_id, const std::string &description, const VectorClock &new_clock)
+bool TaskManager::update_task(int task_id, const std::string &title, const std::string &description, const VectorClock &new_clock)
 {
     std::lock_guard<std::mutex> lock(task_lock);
     auto it = tasks.find(task_id);
@@ -45,14 +45,16 @@ bool TaskManager::update_task(int task_id, const std::string &description, const
         // Concurrent updates - use last-write-wins (already applied)
         std::cout << "[CONFLICT] Concurrent update detected for task " << task_id 
                   << " - applying last-write-wins\n";
-        it->second.set_description(description);
+        if (!title.empty()) it->second.set_title(title);
+        if (!description.empty()) it->second.set_description(description);
         it->second.get_clock().update(new_clock);
         it->second.set_updated_at(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
         return true;
     } else if (comparison < 0) {
         // New update is causally newer - apply it
-        it->second.set_description(description);
+        if (!title.empty()) it->second.set_title(title);
+        if (!description.empty()) it->second.set_description(description);
         it->second.get_clock().update(new_clock);
         it->second.set_updated_at(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
@@ -163,7 +165,7 @@ std::vector<Task> TaskManager::get_all_tasks()
     return all_tasks;
 }
 // Update task with conflict detection and returns detailed response
-OperationResponse TaskManager::update_task_with_conflict_detection(int task_id, const std::string &description, const VectorClock &new_clock)
+OperationResponse TaskManager::update_task_with_conflict_detection(int task_id, const std::string &title, const std::string &description, const VectorClock &new_clock)
 {
     OperationResponse response;
     response.updated_task_id = task_id;
@@ -182,7 +184,8 @@ OperationResponse TaskManager::update_task_with_conflict_detection(int task_id, 
         // Concurrent updates and apply with conflict flag
         std::cout << "[CONFLICT] Concurrent update detected for task " << task_id 
                   << " - applying last-write-wins\n";
-        it->second.set_description(description);
+        if (!title.empty()) it->second.set_title(title);
+        if (!description.empty()) it->second.set_description(description);
         it->second.get_clock().update(new_clock);
         it->second.set_updated_at(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());
@@ -192,7 +195,8 @@ OperationResponse TaskManager::update_task_with_conflict_detection(int task_id, 
         return response;
     } else if (comparison < 0) {
         // New update is causally newer - apply normally
-        it->second.set_description(description);
+        if (!title.empty()) it->second.set_title(title);
+        if (!description.empty()) it->second.set_description(description);
         it->second.get_clock().update(new_clock);
         it->second.set_updated_at(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count());

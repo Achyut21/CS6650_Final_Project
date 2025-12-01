@@ -58,6 +58,12 @@ void VectorClock::set(int id, int value)
     clock[id] = value;
 }
 
+// Clear all entries (used before unmarshal to remove stale data)
+void VectorClock::clear()
+{
+    clock.clear();
+}
+
 // Compare two vector clocks
 // Returns:
 // -1 if this < other | 1 if this > other | 0 if concurrent
@@ -379,7 +385,8 @@ void Task::Unmarshal(const char *buffer)
     updated_at = ntohll(net_updated_at);
     offset += sizeof(long long);
     
-    // vector clock - reconstruct using set() method
+    // vector clock - clear stale entries then reconstruct using set() method
+    vclock.clear();
     int net_clock_size;
     memcpy(&net_clock_size, buffer + offset, sizeof(int));
     int clock_size = ntohl(net_clock_size);
@@ -587,7 +594,8 @@ void LogEntry::Unmarshal(const char *buffer)
     client_id = ntohl(net_client_id);
     offset += sizeof(int);
     
-    // Restore vector clock using set() method
+    // Clear stale entries then restore vector clock using set() method
+    timestamp.clear();
     int net_clock_size;
     memcpy(&net_clock_size, buffer + offset, sizeof(int));
     int clock_size = ntohl(net_clock_size);

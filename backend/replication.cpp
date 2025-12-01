@@ -20,6 +20,10 @@ ReplicationManager::~ReplicationManager() {
 }
 
 void ReplicationManager::add_backup(const std::string& ip, int port) {
+    // Store IP and port for reconnection
+    backup_ips.push_back(ip);
+    backup_ports.push_back(port);
+    
     ClientStub* stub = new ClientStub();
     
     // Try to connect
@@ -48,7 +52,7 @@ void ReplicationManager::add_backup(const std::string& ip, int port) {
         backup_stubs.push_back(stub);
         backup_connected.push_back(true);
     } else {
-        std::cerr << "Failed to connect to backup at " << ip << ":" << port << "\n";
+        std::cerr << "Failed to connect to backup at " << ip << ":" << port << " (will retry)\n";
         delete stub;
         backup_stubs.push_back(nullptr);
         backup_connected.push_back(false);
@@ -110,10 +114,53 @@ bool ReplicationManager::has_backups() const {
     return false;
 }
 
+// Try to reconnect to a disconnected backup
+bool ReplicationManager::try_reconnect(size_t index) {
+    if (index >= backup_ips.size()) return false;
+    
+    const std::string& ip = backup_ips[index];
+    int port = backup_ports[index];
+    
+    // Clean up old stub if exists
+    if (backup_stubs[index]) {
+        backup_stubs[index]->Close();
+        delete backup_stubs[index];
+        backup_stubs[index] = nullptr;
+    }
+    
+    ClientStub* stub = new ClientStub();
+    
+    if (!stub->Init(ip, port)) {
+        delete stub;
+        return false;
+    }
+    
+    // Send REPLICATION_INIT handshake
+    if (!stub->SendOpType(OpType::REPLICATION_INIT)) {
+        delete stub;
+        return false;
+    }
+    
+    // Wait for acknowledgment
+    if (!stub->ReceiveSuccess()) {
+        delete stub;
+        return false;
+    }
+    
+    backup_stubs[index] = stub;
+    backup_connected[index] = true;
+    std::cout << "[RECONNECT] Successfully reconnected to backup at " << ip << ":" << port << "\n";
+    return true;
+}
+
 // Send heartbeat to all backups (active probing)
 void ReplicationManager::send_heartbeat() {
     for (size_t i = 0; i < backup_stubs.size(); i++) {
+        // Try to reconnect disconnected backups
         if (!backup_connected[i] || !backup_stubs[i]) {
+            if (try_reconnect(i)) {
+                std::cout << "[HEARTBEAT] Backup " << i << " reconnected\n";
+            }
             continue;
         }
         

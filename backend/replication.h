@@ -15,11 +15,16 @@ private:
     int factory_id;
     std::vector<ClientStub*> backup_stubs;
     std::vector<bool> backup_connected;
+    std::vector<std::string> backup_ips;
+    std::vector<int> backup_ports;
     std::atomic<bool> heartbeat_running;
     std::thread heartbeat_thread;
     
     // Heartbeat worker function
     void heartbeat_worker();
+    
+    // Try to reconnect to a disconnected backup
+    bool try_reconnect(size_t index);
 
 public:
     ReplicationManager(int id);

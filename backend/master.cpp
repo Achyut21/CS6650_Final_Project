@@ -105,6 +105,22 @@ void HandleClient(Socket* client_socket, int client_id) {
             break;
         }
         
+        // Handle STATE_TRANSFER_REQUEST before receiving task (backup rejoin doesn't send task)
+        if (op_type == OpType::STATE_TRANSFER_REQUEST) {
+            std::cout << "[STATE_TRANSFER] Backup requesting state sync\n";
+            std::vector<Task> all_tasks = task_manager.get_all_tasks();
+            std::vector<LogEntry> log = state_machine.get_log();
+            int id_counter = task_manager.get_id_counter();
+            
+            std::cout << "[STATE_TRANSFER] Sending " << all_tasks.size() << " tasks, "
+                      << log.size() << " log entries, ID counter: " << id_counter << "\n";
+            
+            if (!stub.SendStateTransfer(all_tasks, log, id_counter)) {
+                std::cerr << "[STATE_TRANSFER] Failed to send state to backup\n";
+            }
+            continue;
+        }
+        
         // Receive task data
         Task task = stub.ReceiveTask();
         bool success = false;
@@ -185,9 +201,10 @@ void HandleClient(Socket* client_socket, int client_id) {
                     }
                 }
                 
-                // Use conflict detection version
+                // Use conflict detection version (now includes title)
                 op_response = task_manager.update_task_with_conflict_detection(
                     task.get_task_id(),
+                    task.get_title(),
                     task.get_description(),
                     vc
                 );
@@ -196,7 +213,7 @@ void HandleClient(Socket* client_socket, int client_id) {
                 if (success && !op_response.rejected) {
                     LogEntry entry(next_entry_id++, op_type, vc,
                                  task.get_task_id(),
-                                 "",  // No title change for updates
+                                 task.get_title(),  // Include title for updates
                                  task.get_description(),
                                  "",  // No created_by for updates
                                  Column::TODO,
@@ -324,10 +341,9 @@ void HandleClient(Socket* client_socket, int client_id) {
             case OpType::HEARTBEAT_PING:
             case OpType::HEARTBEAT_ACK:
             case OpType::MASTER_REJOIN:
-            case OpType::STATE_TRANSFER_REQUEST:
             case OpType::STATE_TRANSFER_RESPONSE:
             case OpType::DEMOTE_ACK:
-                // Master shouldn't receive these from gateway clients
+                // Control messages not expected from gateway clients
                 std::cerr << "Unexpected control message received\n";
                 break;
             

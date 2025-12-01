@@ -50,6 +50,7 @@ public:
     void increment();
     void update(const VectorClock &other);
     void set(int id, int value);  // Set clock value for a process (used during unmarshal)
+    void clear();  // Clear all entries (used before unmarshal to remove stale data)
     int get(int id) const;
     int compare_to(const VectorClock &other) const;
     const std::map<int, int> &get_clock() const;

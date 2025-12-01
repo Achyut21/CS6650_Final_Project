@@ -7,6 +7,7 @@
 // Test counter
 int tests_passed = 0;
 int tests_failed = 0;
+bool current_test_failed = false;  // Track if current test failed
 
 // Helper macros
 #define TEST(name) void name()
@@ -14,16 +15,22 @@ int tests_failed = 0;
     if (!(expr))                                                                  \
     {                                                                             \
         std::cerr << "FAILED: " << #expr << " at line " << __LINE__ << std::endl; \
-        tests_failed++;                                                           \
+        current_test_failed = true;                                               \
         return;                                                                   \
     }
 #define ASSERT_FALSE(expr) ASSERT_TRUE(!(expr))
 #define ASSERT_EQUAL(a, b) ASSERT_TRUE((a) == (b))
 #define RUN_TEST(test)                                      \
     std::cout << "Running " << #test << "..." << std::endl; \
+    current_test_failed = false;                            \
     test();                                                 \
-    tests_passed++;                                         \
-    std::cout << "  PASSED" << std::endl;
+    if (current_test_failed) {                              \
+        tests_failed++;                                     \
+        std::cout << "  FAILED" << std::endl;              \
+    } else {                                                \
+        tests_passed++;                                     \
+        std::cout << "  PASSED" << std::endl;              \
+    }
 
 /* ============ VectorClock Tests ============ */
 
@@ -190,7 +197,7 @@ TEST(test_task_manager_update_task)
 
     VectorClock vc(1);
     vc.increment();
-    ASSERT_TRUE(tm.update_task(0, "Updated", vc));
+    ASSERT_TRUE(tm.update_task(0, "", "Updated", vc));  // Empty title, update description
 
     Task task = tm.get_task(0);
     ASSERT_EQUAL(task.get_description(), "Updated");
@@ -200,7 +207,7 @@ TEST(test_task_manager_update_nonexistent_task)
 {
     TaskManager tm;
     VectorClock vc(1);
-    ASSERT_FALSE(tm.update_task(999, "Updated", vc));
+    ASSERT_FALSE(tm.update_task(999, "", "Updated", vc));
 }
 
 TEST(test_task_manager_move_task)
@@ -283,7 +290,7 @@ TEST(test_task_manager_workflow)
 
     // Update description of second task
     vc.increment();
-    tm.update_task(1, "Implement distributed backend", vc);
+    tm.update_task(1, "", "Implement distributed backend", vc);
     ASSERT_EQUAL(tm.get_task(1).get_description(), "Implement distributed backend");
 
     // Complete first task

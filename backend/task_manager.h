@@ -22,9 +22,9 @@ public:
     // Backward compatible signature for tests
     bool create_task(std::string description, int client_id);
     
-    OperationResponse update_task_with_conflict_detection(int task_id, const std::string &description, const VectorClock &vc);
+    OperationResponse update_task_with_conflict_detection(int task_id, const std::string &title, const std::string &description, const VectorClock &vc);
     OperationResponse move_task_with_conflict_detection(int task_id, Column column, const VectorClock &vc);
-    bool update_task(int task_id, const std::string &description, const VectorClock &vc);
+    bool update_task(int task_id, const std::string &title, const std::string &description, const VectorClock &vc);
     bool move_task(int task_id, Column column, const VectorClock &vc);
     bool delete_task(int task_id);
     Task get_task(int id);

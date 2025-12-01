@@ -4,6 +4,7 @@
 #include <csignal>
 #include "Socket.h"
 #include "ServerStub.h"
+#include "ClientStub.h"
 #include "task_manager.h"
 #include "state_machine.h"
 #include "messages.h"
@@ -27,6 +28,55 @@ void SignalHandler(int) {
     if (global_server_socket) {
         global_server_socket->Close();
     }
+}
+
+// Try to rejoin after restart - connect to master and request current state
+// Returns true if state was received from master
+bool TryRejoinFromMaster(const std::string& master_ip, int master_port) {
+    ClientStub client;
+    if (!client.Init(master_ip, master_port)) {
+        // Master not reachable - this is normal on first start
+        return false;
+    }
+    
+    std::cout << "[REJOIN] Connected to master, requesting state sync\n";
+    
+    // Send STATE_TRANSFER_REQUEST
+    if (!client.SendOpType(OpType::STATE_TRANSFER_REQUEST)) {
+        std::cerr << "[REJOIN] Failed to send STATE_TRANSFER_REQUEST\n";
+        client.Close();
+        return false;
+    }
+    
+    // Receive state transfer
+    std::vector<Task> tasks;
+    std::vector<LogEntry> log;
+    int id_counter;
+    
+    if (!client.ReceiveStateTransfer(tasks, log, id_counter)) {
+        std::cerr << "[REJOIN] Failed to receive state from master\n";
+        client.Close();
+        return false;
+    }
+    
+    std::cout << "[REJOIN] Received: " << tasks.size() << " tasks, " 
+              << log.size() << " log entries, ID counter: " << id_counter << "\n";
+    
+    // Apply state
+    task_manager.clear_all_tasks();
+    for (const Task& task : tasks) {
+        task_manager.add_task_direct(task);
+    }
+    task_manager.set_id_counter(id_counter);
+    
+    // Apply log
+    state_machine.set_log(log);
+    next_entry_id = state_machine.get_next_entry_id();
+    
+    std::cout << "[REJOIN] State applied successfully, next entry ID: " << next_entry_id << "\n";
+    
+    client.Close();
+    return true;
 }
 
 // Handle client requests after promotion (same as master but no replication)
@@ -85,7 +135,7 @@ void HandleClient(Socket* client_socket, int client_id) {
                         client_clocks.insert({client_id, vc});
                     }
                     op_response = task_manager.update_task_with_conflict_detection(
-                        task.get_task_id(), task.get_description(), vc);
+                        task.get_task_id(), task.get_title(), task.get_description(), vc);
                 }
                 if (op_response.success) std::cout << "Updated task " << task.get_task_id() << "\n";
                 
@@ -301,7 +351,7 @@ void HandleReplication(Socket* client_socket) {
                 break;
                 
             case OpType::UPDATE_TASK:
-                task_manager.update_task(entry.get_task_id(), entry.get_description(), vc);
+                task_manager.update_task(entry.get_task_id(), entry.get_title(), entry.get_description(), vc);
                 std::cout << "Replicated UPDATE_TASK\n";
                 break;
                 
@@ -365,6 +415,14 @@ int main(int argc, char* argv[]) {
     
     std::cout << "Starting backup node " << node_id << " on port " << port << "\n";
     std::cout << "Primary: " << primary_ip << ":" << primary_port << "\n";
+    
+    // Try to rejoin from master (in case we crashed and master has newer state)
+    bool rejoined = TryRejoinFromMaster(primary_ip, primary_port);
+    if (rejoined) {
+        std::cout << "Recovered state from master\n";
+    } else {
+        std::cout << "Starting fresh (master not reachable or no state to sync)\n";
+    }
     
     signal(SIGINT, SignalHandler);
     
@@ -467,15 +525,39 @@ int main(int argc, char* argv[]) {
                             break;
                             
                         case OpType::UPDATE_TASK: {
-                            VectorClock vc(0);
+                            // Use proper vector clock tracking
+                            VectorClock vc(1);  // Use client_id 1 for gateway connections
+                            {
+                                std::lock_guard<std::mutex> lock(clock_mutex);
+                                auto it = client_clocks.find(1);
+                                if (it != client_clocks.end()) {
+                                    vc = it->second;
+                                    vc.increment();
+                                    it->second = vc;
+                                } else {
+                                    client_clocks.insert({1, vc});
+                                }
+                            }
                             op_response = task_manager.update_task_with_conflict_detection(
-                                task.get_task_id(), task.get_description(), vc);
+                                task.get_task_id(), task.get_title(), task.get_description(), vc);
                             peek_stub.SendOperationResponse(op_response);
                             break;
                         }
                             
                         case OpType::MOVE_TASK: {
-                            VectorClock vc(0);
+                            // Use proper vector clock tracking
+                            VectorClock vc(1);  // Use client_id 1 for gateway connections
+                            {
+                                std::lock_guard<std::mutex> lock(clock_mutex);
+                                auto it = client_clocks.find(1);
+                                if (it != client_clocks.end()) {
+                                    vc = it->second;
+                                    vc.increment();
+                                    it->second = vc;
+                                } else {
+                                    client_clocks.insert({1, vc});
+                                }
+                            }
                             op_response = task_manager.move_task_with_conflict_detection(
                                 task.get_task_id(), task.get_column(), vc);
                             peek_stub.SendOperationResponse(op_response);

@@ -44,7 +44,7 @@ void StateMachine::replay_log(TaskManager& tm, const std::vector<LogEntry>& entr
                 break;
                 
             case OpType::UPDATE_TASK:
-                tm.update_task(entry.get_task_id(), entry.get_description(), vc);
+                tm.update_task(entry.get_task_id(), entry.get_title(), entry.get_description(), vc);
                 break;
                 
             case OpType::MOVE_TASK:
