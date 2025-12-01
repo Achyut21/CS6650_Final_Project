@@ -211,6 +211,7 @@ Starting backup node 1 on port 12346
 Primary: <ip-1>:12345
 Starting fresh (master not reachable or no state to sync)
 Backup listening on port 12346...
+Waiting for primary connection or ready to promote...
 ```
 
 ### Step 5: Start Master (on Master Machine)
