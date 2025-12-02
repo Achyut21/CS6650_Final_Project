@@ -131,7 +131,7 @@ hostname -i
 
 # Example:
 # ssh achyutk21@linux-081.khoury.northeastern.edu
-# hostname -i  →  10.200.125.81
+# hostname -i  ->  10.200.125.81
 ```
 
 ### Deployment Architecture
@@ -247,6 +247,8 @@ Backup listening on port 12346...
 Waiting for primary connection or ready to promote...
 ```
 
+![Step 4 Output](img/step_4.png)
+
 ### Step 5: Start Master (on Master Machine)
 
 On <machine-1> (Terminal 1):
@@ -269,6 +271,8 @@ Replication handshake successful with backup
 Heartbeat monitoring started
 Master listening on port 12345...
 ```
+
+![Step 5 Output](img/step_5.png)
 
 ### Step 6: Start Gateway (on Master Machine)
 
@@ -299,6 +303,8 @@ node server.js
 # node server.js
 ```
 
+![Step 6 Output](img/step_6.png)
+
 ### Step 7: SSH Tunnel for Browser Access (to Master Machine)
 
 On your **local machine** (laptop), open a new terminal:
@@ -311,6 +317,8 @@ ssh -L 8080:localhost:8080 <username>@<machine-1>.khoury.northeastern.edu
 ```
 
 Keep this terminal open. Access the app at: http://localhost:8080
+
+![Step 7 Output](img/step_7.png)
 
 ### Summary: What Runs Where
 
@@ -325,7 +333,7 @@ Keep this terminal open. Access the app at: http://localhost:8080
 
 Local Machine:
   └── SSH Tunnel (ssh -L 8080:localhost:8080 ...)
-  └── Browser → http://localhost:8080
+  └── Browser -> http://localhost:8080
 ```
 
 
@@ -358,6 +366,9 @@ curl -X POST http://localhost:8080/api/tasks \
   -d '{"title":"Task 5","description":"Fifth task","column":2,"board_id":"board-1","created_by":"Charlie"}'
 ```
 
+![Test 1.1.1 - Terminal](img/test_1.1.1.png)
+![Test 1.1.2 - Website](img/test_1.1.2.png)
+
 Update 2 tasks:
 
 ```bash
@@ -370,6 +381,9 @@ curl -X PATCH http://localhost:8080/api/tasks/1 \
   -d '{"title":"Updated Task 2"}'
 ```
 
+![Test 1.2.1 - Terminal](img/test_1.2.1.png)
+![Test 1.2.2 - Website](img/test_1.2.2.png)
+
 Move 1 task:
 
 ```bash
@@ -378,11 +392,17 @@ curl -X PATCH http://localhost:8080/api/tasks/2 \
   -d '{"column":1}'
 ```
 
+![Test 1.3.1 - Terminal](img/test_1.3.1.png)
+![Test 1.3.2 - Website](img/test_1.3.2.png)
+
 Delete 1 task:
 
 ```bash
 curl -X DELETE http://localhost:8080/api/tasks/4
 ```
+
+![Test 1.4.1 - Terminal](img/test_1.4.1.png)
+![Test 1.4.2 - Website](img/test_1.4.2.png)
 
 Verify final state:
 
@@ -400,7 +420,7 @@ curl http://localhost:8080/api/boards/board-1 | python3 -m json.tool
 
 **Expected**: Task appears in Tab B within 200ms. Both tabs show identical state.
 
-**Verification**: Open browser DevTools (F12) → Console. Look for:
+**Verification**: Open browser DevTools (F12) -> Console. Look for:
 ```
 WebSocket connected
 ```
@@ -423,11 +443,16 @@ curl -X PATCH http://localhost:8080/api/tasks/0 \
 wait
 ```
 
+![Test 3.1.1 - Terminal Command 1](img/test_3.1.1.png)
+![Test 3.1.2 - Terminal Command 2](img/Test_3.1.2.png)
+
 Check result:
 
 ```bash
 curl http://localhost:8080/api/boards/board-1 | python3 -m json.tool | grep -A2 '"task_id": 0'
 ```
+
+![Test 3.1.3 - Website Verification](img/test_3.1.3.png)
 
 **Expected**: Last write wins. One version persists. Check master logs for `[CONFLICT]` message.
 
@@ -466,6 +491,8 @@ PROMOTING TO MASTER
 Backup promoted! Now accepting client connections on port 12346
 ```
 
+![Test 5.3.1 - Backup Terminal](img/test_5.3.1.png)
+
 4. Gateway automatically fails over. Create a new task:
 
 ```bash
@@ -474,11 +501,15 @@ curl -X POST http://localhost:8080/api/tasks \
   -d '{"title":"After failover","description":"Created on backup","column":0,"board_id":"board-1","created_by":"Test"}'
 ```
 
+![Test 5.4.1 - Gateway Failover](img/test_5.4.1.png)
+
 5. Verify tasks preserved:
 
 ```bash
 curl http://localhost:8080/api/boards/board-1 | python3 -m json.tool
 ```
+
+![Test 5.5.1 - Verify Tasks Preserved](img/test_5.5.1.png)
 
 **Expected**: All previous tasks present plus new task. Frontend reconnects automatically.
 
@@ -500,12 +531,16 @@ curl http://localhost:8080/api/boards/board-1 | python3 -m json.tool
 [REJOIN] State applied successfully
 ```
 
+![Test 6.3.1 - Backup Output](img/test_6.3.1.png)
+
 4. Verify state matches:
 
 ```bash
 # Check master task count (from master logs or via API)
 # Check backup received same count
 ```
+
+![Test 6.4.1 - Verify State Matches](img/test_6.4.1.png)
 
 **Expected**: Backup reconstructs identical state to master.
 
@@ -549,6 +584,8 @@ window.__socket.on('TASK_CREATED', (data) => {
 });
 ```
 
+![Test 8.3.1 - Run Latency Script](img/test_8.3.1.png)
+
 4. Create task via curl:
 
 ```bash
@@ -556,6 +593,10 @@ curl -X POST http://localhost:8080/api/tasks \
   -H "Content-Type: application/json" \
   -d '{"title":"Latency test","description":"Measuring propagation","column":0,"board_id":"board-1","created_by":"Tester"}'
 ```
+
+![Test 8.4.1 - Create Task via Curl](img/test_8.4.1.png)
+
+![Test 8.5.1 - Check Latency](img/test_8.5.1.png)
 
 **Expected**: 90th percentile latency under 200ms, 99th percentile under 500ms.
 

@@ -2,7 +2,7 @@
 #include <iostream>
 
 ReplicationManager::ReplicationManager(int id) : factory_id(id), heartbeat_running(false) {
-    // Suppress unused warning - factory_id reserved for future use
+    // Suppress unused warning, factory_id reserved for future use
     (void)factory_id;
 }
 
@@ -202,7 +202,7 @@ void ReplicationManager::send_heartbeat() {
     }
 }
 
-// Heartbeat worker thread - monitors every 5 seconds
+// Heartbeat worker thread, monitors every 5 seconds
 void ReplicationManager::heartbeat_worker() {
     std::cout << "[HEARTBEAT] Monitoring started (interval: 5 seconds)\n";
     

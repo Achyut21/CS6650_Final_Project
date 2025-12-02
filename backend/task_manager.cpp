@@ -60,7 +60,7 @@ bool TaskManager::update_task(int task_id, const std::string &title, const std::
             std::chrono::system_clock::now().time_since_epoch()).count());
         return true;
     } else {
-        // Old update - reject it
+        // Old update here so we reject it
         std::cout << "[CONFLICT] Rejecting old update for task " << task_id 
                   << " (outdated by vector clock)\n";
         return false;
@@ -103,7 +103,6 @@ bool TaskManager::move_task(int task_id, Column column, const VectorClock &new_c
             std::chrono::system_clock::now().time_since_epoch()).count());
         return true;
     } else {
-        // Old move - reject
         std::cout << "[CONFLICT] Rejecting old move for task " << task_id 
                   << " (outdated by vector clock)\n";
         return false;
@@ -194,7 +193,7 @@ OperationResponse TaskManager::update_task_with_conflict_detection(int task_id, 
         response.rejected = false;
         return response;
     } else if (comparison < 0) {
-        // New update is causally newer - apply normally
+        // New update is causally newer so we apply it normally
         if (!title.empty()) it->second.set_title(title);
         if (!description.empty()) it->second.set_description(description);
         it->second.get_clock().update(new_clock);
@@ -205,7 +204,7 @@ OperationResponse TaskManager::update_task_with_conflict_detection(int task_id, 
         response.rejected = false;
         return response;
     } else {
-        // Old update - reject it
+        // Old update here so we reject it
         std::cout << "[CONFLICT] Rejecting old update for task " << task_id 
                   << " (outdated by vector clock)\n";
         response.success = false;

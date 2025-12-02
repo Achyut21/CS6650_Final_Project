@@ -29,7 +29,7 @@ void SignalHandler(int) {
     }
 }
 
-// Try to rejoin after crash - connect to backup, get state if it's promoted
+// Try to rejoin after crash which is connect to backup, get state if it's promoted
 // Returns true if state was received from promoted backup
 bool TryRejoinFromBackup(const std::string& backup_ip, int backup_port) {
     ClientStub client;
@@ -50,12 +50,12 @@ bool TryRejoinFromBackup(const std::string& backup_ip, int backup_port) {
     int id_counter;
     
     if (!client.ReceiveStateTransfer(tasks, log, id_counter)) {
-        // Backup is not promoted - this is normal on first start
+        // Backup is not promoted and this is expected behaviour on first start
         client.Close();
         return false;
     }
     
-    // Backup WAS promoted - we're actually rejoining!
+    // Backup WAS promoted and we are actually rejoining!
     std::cout << "[REJOIN] Backup was promoted, receiving state transfer\n";
     std::cout << "[REJOIN] Received: " << tasks.size() << " tasks, " 
               << log.size() << " log entries, ID counter: " << id_counter << "\n";
@@ -362,8 +362,6 @@ void HandleClient(Socket* client_socket, int client_id) {
 
 
 int main(int argc, char* argv[]) {
-    // Parse: ./master [port] [node_id] [backup_ip] [backup_port]
-    // Or simple mode: ./master [port] [node_id]
     if (argc != 3 && argc != 5) {
         std::cerr << "Usage: ./master [port] [node_id]\n";
         std::cerr << "   Or: ./master [port] [node_id] [backup_ip] [backup_port]\n";

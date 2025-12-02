@@ -253,11 +253,11 @@ function serializeTask(task) {
   buffer.writeInt32BE(task.client_id || 0, offset);
   offset += 4;
   
-  // created_at (8 bytes) - will be set by backend, send 0
+  // created_at (8 bytes) will be set by backend, send 0
   buffer.writeBigInt64BE(BigInt(task.created_at || 0), offset);
   offset += 8;
   
-  // updated_at (8 bytes) - will be set by backend, send 0
+  // updated_at (8 bytes) will be set by backend, send 0
   buffer.writeBigInt64BE(BigInt(task.updated_at || 0), offset);
   offset += 8;
   
@@ -521,7 +521,7 @@ app.post('/api/tasks', async (req, res) => {
   }
 });
 
-// PATCH /api/tasks/:id - Update a task
+// PATCH /api/tasks/:id, this will Update a task
 app.patch('/api/tasks/:id', async (req, res) => {
   try {
     const taskId = parseInt(req.params.id);
@@ -532,8 +532,8 @@ app.patch('/api/tasks/:id', async (req, res) => {
     let opType, taskData;
     
     // Determine operation type based on what's being updated
-    // If ONLY column is changing (and title/description are NOT provided), it's a MOVE
-    // Otherwise, it's an UPDATE
+    // If ONLY column is changing (and title/description are NOT provided), it is a MOVE
+    // Otherwise, it is an UPDATE
     const isColumnOnlyUpdate = (column !== undefined) && (title === undefined) && (description === undefined);
     
     if (isColumnOnlyUpdate) {
@@ -567,7 +567,21 @@ app.patch('/api/tasks/:id', async (req, res) => {
     const result = await sendToBackend(opType, taskData);
     
     if (result.success) {
-      const updatedTask = {
+      // Fetch actual state from backend to ensure correct broadcast after conflicts
+      let actualTask = null;
+      try {
+        const tasks = await getBoardFromBackend();
+        actualTask = tasks.find(t => t.task_id === taskId);
+      } catch (fetchErr) {
+        console.error('[PATCH] Failed to fetch actual state:', fetchErr);
+      }
+      
+      // Use actual backend state if available, otherwise fall back to request data
+      const updatedTask = actualTask ? {
+        ...actualTask,
+        conflict: result.conflict || false,
+        rejected: result.rejected || false
+      } : {
         task_id: taskId,
         ...req.body,
         updated_at: Date.now(),
@@ -602,7 +616,7 @@ app.patch('/api/tasks/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/tasks/:id - Delete a task
+// DELETE /api/tasks/:id, this will Delete a task
 app.delete('/api/tasks/:id', async (req, res) => {
   try {
     const taskId = parseInt(req.params.id);

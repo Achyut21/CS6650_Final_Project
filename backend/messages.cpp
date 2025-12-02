@@ -64,8 +64,7 @@ void VectorClock::clear()
     clock.clear();
 }
 
-// Compare two vector clocks
-// Returns:
+// Compare two vector clocks and returns:
 // -1 if this < other | 1 if this > other | 0 if concurrent
 int VectorClock::compare_to(const VectorClock &other) const
 {
@@ -226,7 +225,7 @@ void Task::set_updated_at(long long timestamp)
     this->updated_at = timestamp;
 }
 
-// Task marshalling: task_id + description_len + description + column + client_id + vclock_size + vclock_data
+// Task marshalling here task_id + description_len + description + column + client_id + vclock_size + vclock_data
 // Task marshalling with all fields
 int Task::Size() const
 {
@@ -385,7 +384,7 @@ void Task::Unmarshal(const char *buffer)
     updated_at = ntohll(net_updated_at);
     offset += sizeof(long long);
     
-    // vector clock - clear stale entries then reconstruct using set() method
+    // vector clock, here we clear stale entries then reconstruct using set() method
     vclock.clear();
     int net_clock_size;
     memcpy(&net_clock_size, buffer + offset, sizeof(int));

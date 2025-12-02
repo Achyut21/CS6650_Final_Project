@@ -14,12 +14,11 @@ enum class OpType
     HEARTBEAT_PING,
     HEARTBEAT_ACK,
     // Master rejoin protocol
-    MASTER_REJOIN,           // Master announces it's rejoining
-    STATE_TRANSFER_REQUEST,  // Request full state from promoted backup
+    MASTER_REJOIN, // Master announces it's rejoining
+    STATE_TRANSFER_REQUEST, // Request full state from promoted backup
     STATE_TRANSFER_RESPONSE, // Backup sends state to master
-    DEMOTE_ACK,              // Backup acknowledges demotion
-    // Replication handshake
-    REPLICATION_INIT         // Master identifies itself when connecting for replication
+    DEMOTE_ACK, // Backup acknowledges demotion
+    REPLICATION_INIT         // Replication Handshake, Master identifies itself when connecting for replication
 };
 
 // Response status for operations
