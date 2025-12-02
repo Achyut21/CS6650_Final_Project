@@ -205,11 +205,17 @@ make clean && make
 ### Step 3: Deploy Gateway (on Master Machine)
 
 ```bash
-# From local machine - deploy to SAME machine as master
+# From local machine - build frontend first
+cd <local-path>
+./build_frontend.sh
+
+# Then deploy to SAME machine as master
 ssh <username>@<machine-1>.khoury.northeastern.edu "mkdir -p <khoury-path>/gateway"
 scp -r <local-path>/gateway/* <username>@<machine-1>:<khoury-path>/gateway/
 
 # Example:
+# cd /Users/achyutkatiyar/CS6650/FinalProject
+# ./build_frontend.sh
 # ssh achyutk21@linux-081.khoury.northeastern.edu "mkdir -p ~/project/gateway"
 # scp -r /Users/achyutkatiyar/CS6650/FinalProject/gateway/* achyutk21@linux-081:~/project/gateway/
 ```
