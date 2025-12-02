@@ -20,19 +20,7 @@ Real-time collaborative Kanban board with primary-backup replication for fault t
 
 ## Architecture Overview
 
-```
-┌─────────────────┐     HTTP/WS      ┌─────────────────┐      TCP        ┌─────────────────┐
-│  React Frontend │ ◄──────────────► │  Node.js Gateway│ ◄─────────────► │   C++ Master    │
-│   (Browser)     │    Port 8080     │   (server.js)   │   Port 12345    │   (master)      │
-└─────────────────┘                  └─────────────────┘                 └────────┬────────┘
-                                            │                                     │
-                                            │ Failover                            │ Replication
-                                            ▼                                     ▼
-                                     ┌─────────────────┐                 ┌─────────────────┐
-                                     │   C++ Backup    │ ◄───────────────│   Heartbeat     │
-                                     │   (backup)      │   Port 12346    │   (5s interval) │
-                                     └─────────────────┘                 └─────────────────┘
-```
+![Architecture Overview](img/architecture_overview.png)
 
 **Components:**
 - **Frontend**: React + TypeScript + Tailwind CSS. Drag-and-drop via Atlaskit Pragmatic.
@@ -56,30 +44,75 @@ Real-time collaborative Kanban board with primary-backup replication for fault t
 ## Project Structure
 
 ```
-.
-├── backend/
-│   ├── master.cpp          # Primary server
-│   ├── backup.cpp          # Backup server
-│   ├── task_manager.cpp    # Task storage with vector clocks
-│   ├── state_machine.cpp   # Operation log for replication
-│   ├── replication.cpp     # Heartbeat and log streaming
-│   ├── messages.cpp        # Binary serialization
-│   ├── Socket.cpp          # TCP wrapper
-│   ├── ServerStub.cpp      # Server-side protocol
-│   ├── ClientStub.cpp      # Client-side protocol
-│   └── Makefile
-├── gateway/
-│   ├── server.js           # API gateway with failover
-│   ├── package.json
-│   └── public/             # Built frontend files
-├── frontend/
-│   ├── src/
-│   │   ├── components/     # React components
-│   │   ├── hooks/          # WebSocket hook
-│   │   └── api/            # REST client
-│   ├── package.json
-│   └── vite.config.ts
-└── build_frontend.sh       # Build script
+CS6650_Final_Project/
+    ├── backend/
+    │   ├── backup.cpp                 # Backup server main entry point
+    │   ├── ClientStub.cpp             # Client side TCP protocol
+    │   ├── ClientStub.h
+    │   ├── conflict_test.cpp          # Vector clock conflict tests
+    │   ├── Makefile                   # Build configuration
+    │   ├── marshalling_test.cpp       # Serialization tests
+    │   ├── master.cpp                 # Master server main entry point
+    │   ├── messages.cpp               # Task and LogEntry serialization
+    │   ├── messages.h                 # Data structures (Task, LogEntry, VectorClock)
+    │   ├── network_test.cpp           # TCP communication tests
+    │   ├── replication.cpp            # Heartbeat and log streaming
+    │   ├── replication.h
+    │   ├── ServerStub.cpp             # Server side TCP protocol
+    │   ├── ServerStub.h
+    │   ├── Socket.cpp                 # TCP socket wrapper
+    │   ├── Socket.h
+    │   ├── state_machine_test.cpp     # Log replay tests
+    │   ├── state_machine.cpp          # Operation log management
+    │   ├── state_machine.h
+    │   ├── task_manager.cpp           # Task storage with conflict resolution
+    │   ├── task_manager.h
+    │   ├── task_test.cpp              # Task manager unit tests
+    │   ├── test_client.cpp            # Manual testing client
+    ├── frontend/
+    │   ├── public/
+    │   │   ├── vite.svg
+    │   ├── src/
+    │   │   ├── api/
+    │   │   │   ├── client.ts          # REST API client functions
+    │   │   ├── assets/
+    │   │   │   ├── react.svg
+    │   │   ├── components/
+    │   │   │   ├── Board.tsx          # Main Kanban board component
+    │   │   │   ├── Column.tsx         # Drop target column component
+    │   │   │   ├── ConnectionStatus.tsx   # WebSocket status indicator
+    │   │   │   ├── TaskCard.tsx       # Draggable task card
+    │   │   │   ├── TaskModal.tsx      # Create/edit task dialog
+    │   │   │   ├── ToastProvider.tsx  # Notification system
+    │   │   │   ├── WebSocketExample.tsx
+    │   │   ├── config/
+    │   │   │   ├── api.ts             # API endpoint configuration
+    │   │   ├── contexts/
+    │   │   │   ├── ToastContext.ts
+    │   │   ├── hooks/
+    │   │   │   ├── useToast.ts
+    │   │   │   ├── useWebSocket.ts    # WebSocket connection with auto reconnect
+    │   │   ├── types/
+    │   │   │   ├── task.ts            # Task and Column type definitions
+    │   │   │   └── websocket.ts       # WebSocket event types
+    │   │   ├── App.tsx
+    │   │   ├── index.css
+    │   │   └── main.tsx               # Application entry point
+    │   ├── .env                       # Environment variables
+    │   ├── eslint.config.js
+    │   ├── index.html
+    │   ├── package-lock.json
+    │   ├── package.json
+    │   ├── tsconfig.app.json
+    │   ├── tsconfig.json
+    │   ├── tsconfig.node.json
+    │   ├── vite.config.ts             # Vite build configuration
+    ├── gateway/
+    │   ├── package-lock.json
+    │   ├── package.json
+    │   └── server.js                  # API gateway with failover logic
+    ├── build_frontend.sh              # Frontend build and deploy script
+    └── README.md
 ```
 
 ## Khoury Cluster Deployment
