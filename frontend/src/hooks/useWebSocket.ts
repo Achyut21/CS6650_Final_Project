@@ -5,6 +5,14 @@ import { API_BASE_URL } from '@/config/api';
 type ConnectionStatus = 'connected' | 'disconnected' | 'reconnecting';
 type EventCallback = (data: unknown) => void;
 
+// Extend Window interface for global socket access
+declare global {
+  interface Window {
+    __socket: Socket | null;
+    __socketStatus: ConnectionStatus;
+  }
+}
+
 /**
  * Custom hook for managing WebSocket connection with automatic reconnection
  */
@@ -32,20 +40,26 @@ export function useWebSocket() {
 
       socketRef.current = socket;
 
+      // Expose socket globally for console debugging
+      window.__socket = socket;
+
       socket.on('connect', () => {
         setStatus('connected');
+        window.__socketStatus = 'connected';
         reconnectAttempts.current = 0;
         console.log('WebSocket connected');
       });
 
       socket.on('disconnect', () => {
         setStatus('disconnected');
+        window.__socketStatus = 'disconnected';
         console.log('WebSocket disconnected');
         scheduleReconnect();
       });
 
       socket.on('connect_error', () => {
         setStatus('disconnected');
+        window.__socketStatus = 'disconnected';
         scheduleReconnect();
       });
 
@@ -63,6 +77,7 @@ export function useWebSocket() {
       if (reconnectTimeoutRef.current) return;
 
       setStatus('reconnecting');
+      window.__socketStatus = 'reconnecting';
       const delay = getReconnectDelay();
       
       reconnectTimeoutRef.current = setTimeout(() => {
@@ -83,6 +98,7 @@ export function useWebSocket() {
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
+        window.__socket = null;
       }
     };
   }, []);
