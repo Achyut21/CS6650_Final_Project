@@ -503,11 +503,17 @@ curl http://localhost:8080/api/boards/board-1 | python3 -c "import sys,json; pri
 
 1. Open 5 browser tabs connected to the board
 2. Open DevTools Console in each tab
-3. Add this to measure latency:
+3. Paste and run this to measure latency:
 
 ```javascript
-const start = Date.now();
-socket.on('TASK_CREATED', () => console.log('Latency:', Date.now() - start, 'ms'));
+window.__socket.on('TASK_CREATED', (data) => {
+  const now = Date.now();
+  const serverTime = data.task?.created_at || data.task?.updated_at;
+  if (serverTime) {
+    console.log('Server->Client latency:', now - serverTime, 'ms');
+  }
+  console.log('Event received:', data);
+});
 ```
 
 4. Create task via curl:
