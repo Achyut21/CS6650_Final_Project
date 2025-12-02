@@ -108,6 +108,8 @@ CS6650_Final_Project/
     │   ├── tsconfig.node.json
     │   ├── vite.config.ts             # Vite build configuration
     ├── gateway/
+    │   ├── node_modules/
+    │   ├── public/
     │   ├── package-lock.json
     │   ├── package.json
     │   └── server.js                  # API gateway with failover logic
