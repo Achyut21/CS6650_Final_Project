@@ -320,6 +320,8 @@ Keep this terminal open. Access the app at: http://localhost:8080
 
 ![Step 7 Output](img/step_7.png)
 
+> **Note:** Make sure your gateway folder has both `public/` and `node_modules/` directories. If not, run `./build_frontend.sh` locally and copy the gateway folder again to the server. (Alternatively, you can run this script on the server if you have all the files present.)
+
 ### Summary: What Runs Where
 
 ```
